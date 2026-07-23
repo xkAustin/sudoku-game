@@ -1,0 +1,30 @@
+-- Local seed uses SOLUTION_HASH_PEPPER=development-only-change-me from .env.example.
+-- Production deployments should rotate the pepper and regenerate this digest.
+insert into public.ranked_challenges (
+  difficulty, puzzle, solution_hash, puzzle_version, rules_version,
+  rotation_key, available_from, expires_at
+) values (
+  1,
+  '530070000600195000098000060800060003400803001700020006060000280000419005000080079',
+  encode(digest(
+    '534678912672195348198342567859761423426853791713924856961537284287419635345286179development-only-change-me',
+    'sha256'
+  ), 'hex'),
+  1,
+  1,
+  'replace-before-production-2026-01',
+  now() - interval '1 hour',
+  now() + interval '30 days'
+), (
+  6,
+  '000009GE2A5174DCG0030100D700F06BD0048B00GE09050020004CD0608B03G0300B0A524D00000080F00E3G009000000D70C086300E000A00A0104086000B3004D000C8030G0E00C000F00395020A1000000D00C8700F0G0000009514A080060B30G50901240008005020A100D8B0037C0D00FB00G01004A142D87CFB600000',
+  encode(digest(
+    '6FB839GE2A5174DCGE93512AD74CF86BD7C48B6FGE39A5212A154CD76F8BE3G93GEB9A524D176C8F86FCBE3G529AD1474D71CF863GBE295A52A9174D86CFGB3E14DA76C8B3FG5E92C867FGB395E24A1D952EAD14C8763FBGB3GFE29514AD87C6FB36G5E9A124CD78E95G24A17CD8B6F37C8D63FBE9G512A4A142D87CFB639GE5development-only-change-me',
+    'sha256'
+  ), 'hex'),
+  1,
+  1,
+  'hexadoku-development-2026-01',
+  now() - interval '1 hour',
+  now() + interval '30 days'
+) on conflict do nothing;

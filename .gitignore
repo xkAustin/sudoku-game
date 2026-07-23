@@ -1,0 +1,48 @@
+# Godot generated cache
+.godot/
+
+# Exported applications and packages
+build/
+dist/
+exports/
+
+# Local online-service configuration
+backend/supabase/.env
+backend/supabase/.temp/
+config/client.env
+config/client.env.local
+.env
+.env.local
+
+# Signing credentials and provisioning material
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.mobileprovision
+*.cer
+*.key
+
+# Generated native projects
+android/
+ios/
+DerivedData/
+*.xcarchive
+
+# Editors
+.idea/
+.vscode/
+*.code-workspace
+
+# Temporary files and logs
+*.tmp
+*.bak
+*.log
+*.swp
+*.swo
+*~
+
+# Operating systems
+.DS_Store
+Thumbs.db
+Desktop.ini
