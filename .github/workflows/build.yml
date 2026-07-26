@@ -37,11 +37,11 @@ jobs:
             artifact: sudoku-windows-debug
             artifact_path: build/ci/windows
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Cache Godot and export templates
         id: godot-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cache/sudoku-godot/${{ env.GODOT_VERSION }}
@@ -78,13 +78,21 @@ jobs:
           echo "$engine_dir" >> "$GITHUB_PATH"
 
       - name: Import and check project
-        run: godot --headless --path . --editor --quit-after 30
+        run: godot --headless --path . --import
+
+      - name: Prepare export directory
+        shell: bash
+        run: mkdir -p "$(dirname "${{ matrix.output }}")"
 
       - name: Export ${{ matrix.preset }}
         run: godot --headless --path . --export-debug "${{ matrix.preset }}" "${{ matrix.output }}"
 
+      - name: Verify ${{ matrix.preset }} artifact
+        shell: bash
+        run: test -s "${{ matrix.output }}"
+
       - name: Upload ${{ matrix.label }} artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact_path }}
@@ -96,20 +104,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
 
       - name: Install Android SDK components
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Cache Godot and export templates
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cache/sudoku-godot/${{ env.GODOT_VERSION }}
@@ -155,17 +163,44 @@ jobs:
           [gd_resource format=3]
 
           [resource]
+          export/android/java_sdk_path = "$JAVA_HOME"
           export/android/android_sdk_path = "$ANDROID_HOME"
           EOF
 
+      - name: Generate ephemeral Android debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+
       - name: Import and check project
-        run: godot --headless --path . --editor --quit-after 30
+        run: godot --headless --path . --import
+
+      - name: Prepare Android export directory
+        run: mkdir -p build/ci/android
 
       - name: Export Android debug APK
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ runner.temp }}/debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: godot --headless --path . --export-debug Android build/ci/android/sudoku-game-debug.apk
 
+      - name: Verify Android APK
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            verify --verbose build/ci/android/sudoku-game-debug.apk
+
       - name: Upload Android artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: sudoku-android-debug
           path: build/ci/android/sudoku-game-debug.apk
@@ -183,41 +218,42 @@ jobs:
           - label: macOS debug
             preset: macOS
             output: build/ci/macos/Sudoku Game.app
+            verify_path: build/ci/macos/Sudoku Game.app/Contents/MacOS/Sudoku Game
             artifact: sudoku-macos-debug
             artifact_path: build/ci/macos
           - label: iOS Xcode project
             preset: iOS
             output: build/ci/ios/SudokuGame.ipa
+            verify_path: build/ci/ios/SudokuGame.xcodeproj/project.pbxproj
             artifact: sudoku-ios-xcode-project
             artifact_path: build/ci/ios
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Cache Godot and export templates
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cache/sudoku-godot-macos/${{ env.GODOT_VERSION }}
             ~/Library/Application Support/Godot/export_templates/${{ env.GODOT_VERSION }}.stable
-          key: godot-macos-${{ env.GODOT_VERSION }}-templates-v1
+          key: godot-macos-${{ env.GODOT_VERSION }}-templates-v2
 
       - name: Install Godot and export templates
         shell: bash
         run: |
           set -euo pipefail
           engine_dir="$HOME/.cache/sudoku-godot-macos/$GODOT_VERSION"
+          engine_archive="$engine_dir/godot.zip"
           template_dir="$HOME/Library/Application Support/Godot/export_templates/$GODOT_VERSION.stable"
           mkdir -p "$engine_dir" "$template_dir"
-          if [[ ! -x "$engine_dir/godot" ]]; then
+          if [[ ! -f "$engine_archive" ]]; then
             curl --fail --location --retry 3 \
-              --output "$RUNNER_TEMP/godot.zip" \
+              --output "$engine_archive" \
               "$GODOT_RELEASE_BASE/$GODOT_VERSION-stable/Godot_v$GODOT_VERSION-stable_macos.universal.zip"
-            echo "$GODOT_MACOS_SHA512  $RUNNER_TEMP/godot.zip" | shasum -a 512 -c -
-            rm -rf "$RUNNER_TEMP/Godot.app"
-            unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
-            cp "$RUNNER_TEMP/Godot.app/Contents/MacOS/Godot" "$engine_dir/godot"
-            chmod +x "$engine_dir/godot"
           fi
+          echo "$GODOT_MACOS_SHA512  $engine_archive" | shasum -a 512 -c -
+          rm -rf "$RUNNER_TEMP/Godot.app"
+          unzip -q "$engine_archive" -d "$RUNNER_TEMP"
           if [[ ! -f "$template_dir/linux_debug.x86_64" ]]; then
             curl --fail --location --retry 3 \
               --output "$RUNNER_TEMP/templates.tpz" \
@@ -228,10 +264,11 @@ jobs:
             unzip -q "$RUNNER_TEMP/templates.tpz" -d "$RUNNER_TEMP/export-templates"
             cp -R "$RUNNER_TEMP/export-templates/templates/." "$template_dir/"
           fi
-          echo "$engine_dir" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/Godot.app/Contents/MacOS/Godot" --version
+          echo "$RUNNER_TEMP/Godot.app/Contents/MacOS" >> "$GITHUB_PATH"
 
       - name: Import and check project
-        run: godot --headless --path . --editor --quit-after 30
+        run: godot --headless --path . --import
 
       - name: Prepare unsigned iOS project export
         if: matrix.preset == 'iOS'
@@ -242,11 +279,19 @@ jobs:
             's|application/app_store_team_id=""|application/app_store_team_id="CIUNSIGNED"|' \
             export_presets.cfg
 
+      - name: Prepare export directory
+        shell: bash
+        run: mkdir -p "$(dirname "${{ matrix.output }}")"
+
       - name: Export ${{ matrix.preset }}
         run: godot --headless --path . --export-debug "${{ matrix.preset }}" "${{ matrix.output }}"
 
+      - name: Verify ${{ matrix.preset }} artifact
+        shell: bash
+        run: test -s "${{ matrix.verify_path }}"
+
       - name: Upload ${{ matrix.label }} artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact_path }}
