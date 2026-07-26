@@ -1,6 +1,6 @@
 # Building Sudoku Game
 
-Bilingual delivery guides:
+Bilingual build guides:
 [中文](docs/zh-CN/BUILD_GUIDE.md) ·
 [English](docs/en-US/BUILD_GUIDE.md). Platform-specific prerequisites,
 commands, output locations, run steps and troubleshooting live under each
@@ -202,8 +202,10 @@ downloaded Godot engine/template archive is verified against the official
 Artifacts are retained for 14 days. The workflow intentionally contains no
 release signing credentials. Run it from GitHub's Actions page with
 `workflow_dispatch`, or by opening a pull request after the files are committed.
-YAML syntax and all equivalent local export commands were validated, but the
-new workflow cannot execute on GitHub until it has been committed and pushed.
+The workflow is designed for a clean clone and does not consume committed build
+outputs. Its Linux, Windows, Android, macOS and iOS project jobs passed on
+2026-07-26. Publish selected, appropriately signed packages through GitHub
+Releases or a platform store rather than committing them to the default branch.
 
 ## Release checklist
 

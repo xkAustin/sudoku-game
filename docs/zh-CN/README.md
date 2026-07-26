@@ -1,22 +1,18 @@
-# Sudoku Game 交付说明
+# Sudoku Game 开源项目
 
 Sudoku Game 是 Godot 4.7.1 开发的离线优先数独游戏，支持 Android、iOS、
 macOS、Windows 和 Linux。无需账号，无广告或追踪 SDK；网络仅用于可选
 排行榜。
 
-## 方式 A：直接使用 Build
+本 GitHub 仓库保存源码、assets、测试、后端 migration、技术文档和可复现
+构建流程；默认分支不追踪生成的应用程序或安装包。
 
-进入仓库根目录的 `builds/`，选择对应平台。每个目录都有 `BUILD_INFO.md`
-记录版本、时间、环境、SHA-256 和签名状态。
+## 方式 A：下载 Release
 
-- Windows：解压 ZIP，运行 `SudokuGame.exe`。
-- macOS：解压 ZIP，将 `Sudoku Game.app` 移至“应用程序”。
-- Linux：解压 `tar.gz`，运行 `sudoku-game.x86_64`。
-- Android：安装 debug APK；公开发布前必须用私有 release key 重签。
-- iOS：仓库不提供可安装 IPA；参见 iOS 构建文档自行签名。
-
-交付包从不含 `config/client.env` 的干净源码副本生成，因此默认完全离线，
-也不会把真实 Supabase 配置提交到 Git。若需要在线排行榜，请选择方式 B。
+维护者发布预构建版本时，请从
+[GitHub Releases](https://github.com/xkAustin/sudoku-game/releases) 下载。
+Release 说明应标明平台、版本、校验值、签名状态和剩余 QA 限制。没有 Apple
+签名时不提供可安装 iOS IPA。
 
 ## 方式 B：从源码构建
 
@@ -29,6 +25,9 @@ godot --path .
 
 如需在线排行榜，复制 `config/client.env.example` 为被忽略的
 `config/client.env`，仅填写项目 URL 和 publishable key，并先部署 migration。
+
+本地导出写入被忽略的 `build/` 或 `builds/`；公开安装包应发布到 GitHub
+Releases 或平台商店，不进入默认分支。
 
 完整资料：
 

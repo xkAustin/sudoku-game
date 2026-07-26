@@ -1,25 +1,19 @@
-# Sudoku Game Delivery
+# Sudoku Game Open-Source Project
 
 Sudoku Game is an offline-first Godot 4.7.1 application for Android, iOS,
 macOS, Windows, and Linux. It requires no account and contains no advertising or
 tracking SDK. Network access is used only for the optional leaderboard.
 
-## Option A: use a packaged build
+This GitHub repository contains source code, assets, tests, backend migrations,
+documentation and reproducible build workflows. It does not track generated
+applications or installers on the default branch.
 
-Open `builds/` at the repository root and choose a platform. Each folder has a
-`BUILD_INFO.md` with the version, time, environment, SHA-256, and signing state.
+## Option A: download a release
 
-- Windows: extract the ZIP and run `SudokuGame.exe`.
-- macOS: extract the ZIP and move `Sudoku Game.app` to Applications.
-- Linux: extract the `tar.gz` and run `sudoku-game.x86_64`.
-- Android: install the debug APK; sign with a private release key before public
-  distribution.
-- iOS: no installable IPA is committed; sign and archive the Xcode project
-  locally as described in the iOS guide.
-
-Packages are generated from a clean source copy without `config/client.env`.
-They are therefore offline by default and never commit a real Supabase value.
-Choose Option B when the online leaderboard is required.
+Use [GitHub Releases](https://github.com/xkAustin/sudoku-game/releases) when a
+maintainer has published a prebuilt version. Release notes must state platform,
+version, checksum, signing status and remaining QA limitations. No installable
+iOS IPA is provided without Apple signing.
 
 ## Option B: build from source
 
@@ -33,6 +27,10 @@ godot --path .
 For the leaderboard, copy `config/client.env.example` to the ignored
 `config/client.env`, add only the project URL and publishable key, and deploy
 the migration first.
+
+Local exports belong under the ignored `build/` or `builds/` directories.
+Public packages belong in GitHub Releases or platform stores, not the default
+branch.
 
 Full documentation:
 

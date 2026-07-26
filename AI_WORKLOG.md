@@ -281,3 +281,15 @@ The final pre-commit continuation also:
 - Choose whether the documented casual anonymous leaderboard limitation is
   acceptable or whether authenticated, server-issued single-use challenges are
   required.
+
+## 2026-07-26 open-source repository positioning
+
+- Reclassified the GitHub default branch as a source repository containing game
+  source, assets, tests, Supabase backend source, migrations, documentation,
+  export presets and clean-clone CI.
+- Removed generated `builds/` packages and build metadata from Git tracking
+  without deleting the local files.
+- Expanded ignore rules for Godot caches, build/export/release directories,
+  dependency directories, environment files, secrets, logs and temporary files.
+- Updated root and bilingual documentation so prebuilt downloads are published
+  through GitHub Releases or platform stores rather than committed to `main`.

@@ -31,8 +31,9 @@ test-project configuration; clean their generated UUID rows afterward.
 - Never commit `config/client.env`, `.env`, service-role/secret keys, database
   passwords, signing keys, certificates or provisioning profiles.
 - A client build may contain only a Supabase publishable key.
-- Keep local output under ignored `build/`. Commit only deliberately packaged,
-  documented artifacts under `builds/`.
+- Keep generated output under ignored `build/`, `builds/`, `dist/`, `export/`
+  or `release/` directories. Publish reviewed packages through GitHub Releases
+  or platform stores; do not commit them to the default branch.
 - Do not claim target-device QA or production signing unless it was actually
   completed on that platform.
 

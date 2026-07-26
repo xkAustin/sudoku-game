@@ -4,8 +4,9 @@ The project version is `1.0.0`, the Godot version is `4.7.1.stable`, and the
 package identifier is `io.github.xkaustin.sudokugame`. Install export templates
 that exactly match the Godot version.
 
-Source builds go to the ignored `build/` directory. Repository delivery
-packages are under `builds/`. Before building:
+Source builds go to ignored `build/` or `builds/` directories. Generated
+packages are not tracked on the default branch; reviewed public packages belong
+in GitHub Releases or platform stores. Before building:
 
 ```sh
 ./tests/run_all.sh

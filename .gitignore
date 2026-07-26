@@ -1,10 +1,14 @@
 # Godot generated cache
 .godot/
+.import/
 
 # Exported applications and packages
 /build/
+/builds/
 /dist/
+/export/
 /exports/
+/release/
 
 # Local online-service configuration
 backend/supabase/.env
@@ -17,6 +21,7 @@ config/client.env.local
 .env.*
 !.env.example
 !**/.env.example
+*.secret
 
 # Signing credentials and provisioning material
 *.keystore
@@ -34,6 +39,9 @@ config/client.env.local
 /ios/
 DerivedData/
 *.xcarchive
+
+# Package manager dependencies
+node_modules/
 
 # Editors
 .idea/

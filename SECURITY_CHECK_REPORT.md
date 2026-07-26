@@ -4,6 +4,12 @@ Date: 2026-07-26
 Scope: current working tree, intended release packages, export configuration,
 Supabase migration/RPC boundary, and all Git history reachable from this clone.
 
+Repository-positioning note: generated packages that were present under
+`builds/` during this audit are now local-only ignored outputs and are no longer
+tracked on the default branch. Future public binaries belong in GitHub Releases
+or platform stores. The package-scan results below remain the historical record
+for the files examined on this date.
+
 ## Executive result
 
 No privileged credential, private key, signing material or reportable unresolved
@@ -49,7 +55,7 @@ gitleaks dir EXTRACTED_RELEASES --redact --report-format json \
 
 Result: approximately 20 MB of extractable content scanned; zero leaks. A
 separate exact-value check confirmed zero copies of the local Supabase URL and
-publishable key in all four tracked packages.
+publishable key in all four locally generated packages.
 
 ### Credential filename and pattern review
 

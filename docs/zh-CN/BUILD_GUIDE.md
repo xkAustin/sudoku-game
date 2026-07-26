@@ -3,7 +3,8 @@
 项目版本为 `1.0.0`，Godot 版本为 `4.7.1.stable`，包名为
 `io.github.xkaustin.sudokugame`。安装与 Godot 版本完全一致的导出模板。
 
-源码构建输出统一写入被忽略的 `build/`；仓库交付包位于 `builds/`。构建前：
+源码构建输出统一写入被忽略的 `build/` 或 `builds/`。生成包不进入默认分支；
+经过审核的公开包发布到 GitHub Releases 或平台商店。构建前：
 
 ```sh
 ./tests/run_all.sh

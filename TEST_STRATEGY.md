@@ -135,8 +135,10 @@ kept for 14 days. Release signing is intentionally excluded. All third-party
 Actions are pinned to immutable commits, and downloaded Godot archives are
 verified with the official 4.7.1 SHA-512 values before execution.
 
-The workflow YAML files parse locally. They have not run on GitHub at the time
-of this record because the working tree has not yet been committed and pushed.
+The workflow YAML files pass local actionlint validation. On 2026-07-26 the
+clean-clone GitHub runs passed the fast suite, 500-puzzle stress pass and all
+five platform export jobs. CI creates its own ignored `build/ci/` directories
+and does not depend on committed build outputs.
 
 ## Required manual release QA
 

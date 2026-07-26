@@ -1,12 +1,16 @@
 # Sudoku Game
 
-Delivery documentation: [中文](docs/zh-CN/README.md) ·
+Documentation: [中文](docs/zh-CN/README.md) ·
 [English](docs/en-US/README.md)
 
-Two delivery paths are supported:
+This is the public open-source repository. It contains the game source, assets,
+tests, Supabase backend source, migrations, documentation, export presets and
+reproducible CI workflows. Generated applications and installers are not
+tracked on the default branch.
 
-- **Use a packaged build:** open [`builds/`](builds/). These artifacts are
-  generated from a sanitized source copy and are offline by default.
+- **Download a prebuilt version:** use
+  [GitHub Releases](https://github.com/xkAustin/sudoku-game/releases) when a
+  maintainer has published one.
 - **Build from source:** follow the bilingual build guides, optionally add an
   ignored publishable Supabase client configuration, then export with Godot.
 
@@ -84,7 +88,9 @@ ui/themes/                theme resource and builder
 assets/app_icons/         original SVG application/adaptive icons
 backend/supabase/         SQL, seed, Edge Functions and backend tests
 tests/                    executable Godot runner and full-suite command
-docs/                     platform release instructions
+docs/                     bilingual build, deployment and security instructions
+.github/workflows/        clean-clone tests and reproducible debug exports
+export_presets.cfg        Android, iOS, macOS, Windows and Linux presets
 ```
 
 ## Environment and local run
@@ -200,13 +206,11 @@ Platform-specific bilingual instructions are under
 [`docs/zh-CN/build/`](docs/zh-CN/build/) and
 [`docs/en-US/build/`](docs/en-US/build/).
 
-On 2026-07-26 the current working tree successfully produced Android debug,
-Linux debug, Windows debug and ad-hoc macOS Universal artifacts. Sanitized
-offline packages and their checksums are tracked under [`builds/`](builds/).
-An unsigned iOS Xcode project was also generated locally but is not committed
-because an installable IPA requires Apple signing. Only the macOS artifact could
-be launched on this host. Target-device QA and release signing remain separate
-requirements.
+On 2026-07-26 the clean-clone CI successfully produced Android, Linux, Windows
+and macOS debug artifacts plus an unsigned iOS Xcode project. CI artifacts are
+temporary, local outputs remain under ignored build directories, and prebuilt
+public downloads belong in GitHub Releases rather than the default branch.
+Target-device QA and production signing remain separate requirements.
 
 ## Security and known limits
 
