@@ -5,6 +5,15 @@ const PROFILE_FILE := "profile.json"
 const GAMES_FILE := "active_games.json"
 const STATS_FILE := "statistics.json"
 const INSTALLATION_FILE := "installation.json"
+const RESET_JSON_FILES := [
+	SETTINGS_FILE,
+	PROFILE_FILE,
+	GAMES_FILE,
+	STATS_FILE,
+	"pending_submissions.json",
+	"leaderboard_cache.json",
+	"cached_challenges.json",
+]
 
 var settings: Dictionary = {}
 var profile: Dictionary = {}
@@ -68,12 +77,16 @@ func save_settings() -> void:
 	EventBus.settings_changed.emit()
 
 func set_display_name(value: String) -> bool:
-	var normalized := " ".join(value.strip_edges().split(" ", false))
+	var whitespace := RegEx.new()
+	whitespace.compile("\\s+")
+	var normalized := whitespace.sub(value.strip_edges(), " ", true)
 	if normalized.length() < 1 or normalized.length() > 20:
 		return false
 	for character in normalized:
 		if character.unicode_at(0) < 32:
 			return false
+	if normalized.to_lower() in ["admin", "administrator", "moderator", "system", "supabase", "官方", "管理员"]:
+		return false
 	profile["display_name"] = normalized
 	SaveManager.write_json(PROFILE_FILE, profile)
 	return true
@@ -95,6 +108,10 @@ func record_completion(session: GameSession) -> bool:
 	SaveManager.write_json(STATS_FILE, statistics)
 	return is_new_best
 
+func record_failure() -> void:
+	statistics["current_streak"] = 0
+	SaveManager.write_json(STATS_FILE, statistics)
+
 func record_start(difficulty: int) -> void:
 	var key := str(clampi(difficulty, 0, 5))
 	var item: Dictionary = statistics["by_difficulty"].get(key, {"started": 0, "completed": 0, "best_ms": 0, "operations": 0})
@@ -104,14 +121,24 @@ func record_start(difficulty: int) -> void:
 	SaveManager.write_json(STATS_FILE, statistics)
 
 func reset_local_data() -> void:
+	for file_name in RESET_JSON_FILES:
+		SaveManager.remove_json(file_name)
+	SaveManager.remove_user_files_with_prefix(["custom_button_sound.", "custom_error_sound."])
 	settings = _default_settings()
 	profile = {"data_version": 1, "display_name": "Player"}
 	statistics = _default_statistics()
 	active_games = {"data_version": 1, "games": {}}
+	current_session = null
+	_save_due_ms = 0
 	SaveManager.write_json(SETTINGS_FILE, settings)
 	SaveManager.write_json(PROFILE_FILE, profile)
 	SaveManager.write_json(STATS_FILE, statistics)
 	SaveManager.write_json(GAMES_FILE, active_games)
+	if has_node("/root/SyncManager"):
+		get_node("/root/SyncManager").call("clear_all")
+	_apply_theme()
+	EventBus.settings_changed.emit()
+	EventBus.session_changed.emit()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
@@ -123,7 +150,7 @@ func _apply_theme() -> void:
 	RenderingServer.set_default_clear_color(Color("0e1521") if dark else Color("eef3f8"))
 
 func _default_settings() -> Dictionary:
-	return {"data_version": 8, "theme": "system", "language": "system", "sound": true, "error_sound": true, "vibration": true,
+	return {"data_version": 9, "theme": "system", "language": "system", "sound": true, "error_sound": true, "vibration": true,
 		"auto_check": true, "auto_clear_notes": true, "highlight_same": true,
 		"highlight_related": true, "hide_completed_numbers": true, "show_timer": true, "show_mistakes": true,
 		"high_contrast": false, "reduce_motion": false, "ui_scale": 1.0,

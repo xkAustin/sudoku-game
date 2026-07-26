@@ -7,6 +7,34 @@ func _initialize() -> void:
 
 func _run() -> void:
 	root.size = Vector2i(1500, 900)
+	var app_config := root.get_node("AppConfig")
+	app_config.supabase_url = ""
+	app_config.supabase_anon_key = ""
+	root.get_node("NetworkManager").report_connectivity(false)
+	var data_api := root.get_node("SupabaseClient")
+	var offline_request_id: String = data_api.call("get_rows", "scores", "select=id&limit=1")
+	var offline_result: Array = await data_api.request_completed
+	if str(offline_result[0]) != offline_request_id or bool(offline_result[1]) or int(offline_result[3]) != 0 \
+			or str(offline_result[2].get("code", "")) != "UNCONFIGURED":
+		push_error("UI smoke: an unconfigured or offline Data API request should fail safely")
+		quit(1)
+		return
+	var sync_manager := root.get_node("SyncManager")
+	var secure_payload: Dictionary = sync_manager._rpc_payload({
+		"installation_id": "00000000-0000-4000-8000-000000000001",
+		"display_name": "Player",
+		"difficulty": 3,
+		"duration_ms": 120000,
+		"mistakes": 1,
+		"hints_used": 0,
+		"move_count": 90,
+		"idempotency_key": "00000000-0000-4000-8000-000000000002",
+	})
+	if secure_payload.has("p_score") or int(secure_payload.get("p_difficulty", 0)) != 3 \
+			or str(secure_payload.get("p_submission_id", "")).is_empty():
+		push_error("UI smoke: ranked submission must send raw metrics and an idempotency ID, not a client-computed final score")
+		quit(1)
+		return
 	main = load("res://ui/scenes/main/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
@@ -40,7 +68,10 @@ func _run() -> void:
 		return
 	if not app_state.settings.has("leaderboard_auto_refresh") or not app_state.settings.has("leaderboard_network_allowed") \
 			or not app_state.settings.has("ranked_auto_upload") \
-			or not app_state.settings.has("error_sound") or not app_state.settings.has("custom_error_sound_path"):
+			or not app_state.settings.has("error_sound") or not app_state.settings.has("custom_error_sound_path") \
+			or float(app_state.settings.get("ui_scale", 0.0)) < 0.9 \
+			or float(app_state.settings.get("ui_scale", 0.0)) > 1.1 \
+			or not is_equal_approx(float(app_state._default_settings().get("ui_scale", 0.0)), 1.0):
 		push_error("UI smoke: leaderboard and error-sound settings were not migrated")
 		quit(1)
 		return
@@ -53,6 +84,13 @@ func _run() -> void:
 	)
 	if ranked_upload_setting_labels.size() != 1:
 		push_error("UI smoke: ranked automatic-upload setting is missing")
+		quit(1)
+		return
+	var interface_scale_labels: Array[Node] = main.content.find_children("*", "Label", true, false).filter(
+		func(node: Node) -> bool: return (node as Label).text in ["界面缩放", "Interface scale"]
+	)
+	if interface_scale_labels.size() != 1:
+		push_error("UI smoke: interface scale setting is missing")
 		quit(1)
 		return
 	if not main._is_mobile_device("Android") or not main._is_mobile_device("iOS") or main._is_mobile_device("macOS"):
@@ -442,8 +480,8 @@ func _run() -> void:
 		return
 	main._show_leaderboard_snapshot({
 		"source": "cache", "cached_at": "2026-07-22T08:00:00Z",
-		"self_entry": {"rank": 17, "display_name": "Player", "duration_ms": 94000, "mistakes": 1, "move_count": 82},
-		"entries": [{"rank": 1, "display_name": "Fast Player", "duration_ms": 42000, "mistakes": 0, "move_count": 61}]
+		"self_entry": {"rank": 17, "display_name": "Player", "score": 2100000},
+		"entries": [{"rank": 1, "display_name": "Fast Player", "score": 2500000}]
 	})
 	await process_frame
 	var self_cards: Array[Node] = main.content.find_children("*", "PanelContainer", true, false).filter(

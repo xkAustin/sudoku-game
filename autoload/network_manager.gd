@@ -26,7 +26,7 @@ func request_json(method: HTTPClient.Method, endpoint: String, body: Dictionary 
 		"Content-Type: application/json",
 		"X-Client-Version: " + AppConfig.APP_VERSION
 	])
-	var url := AppConfig.supabase_url.trim_suffix("/") + "/functions/v1/" + endpoint.trim_prefix("/")
+	var url := AppConfig.supabase_project_url() + "/functions/v1/" + endpoint.trim_prefix("/")
 	var payload := JSON.stringify(body) if method != HTTPClient.METHOD_GET else ""
 	var error := request.request(url, headers, method, payload)
 	if error != OK:
@@ -58,6 +58,9 @@ func _set_online(value: bool) -> void:
 	if online != value:
 		online = value
 		EventBus.network_changed.emit(online)
+
+func report_connectivity(value: bool) -> void:
+	_set_online(value)
 
 func _uuid_v4() -> String:
 	var bytes := Crypto.new().generate_random_bytes(16)

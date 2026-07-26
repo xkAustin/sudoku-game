@@ -1,0 +1,81 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.1"
+  GODOT_LINUX_SHA512: "4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9"
+
+jobs:
+  fast:
+    name: Godot and Deno
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Cache Godot
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/sudoku-godot/${{ env.GODOT_VERSION }}
+          key: godot-linux-engine-${{ env.GODOT_VERSION }}-v1
+      - name: Install Godot
+        run: |
+          set -euo pipefail
+          engine_dir="$HOME/.cache/sudoku-godot/$GODOT_VERSION"
+          mkdir -p "$engine_dir"
+          if [[ ! -x "$engine_dir/godot" ]]; then
+            curl --fail --location --retry 3 \
+              --output /tmp/godot.zip \
+              "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+            echo "$GODOT_LINUX_SHA512  /tmp/godot.zip" | shasum -a 512 -c -
+            unzip -q /tmp/godot.zip -d /tmp/godot
+            install -m 0755 "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" "$engine_dir/godot"
+          fi
+          echo "$engine_dir" >> "$GITHUB_PATH"
+      - name: Run fast suite
+        run: ./tests/run_all.sh
+
+  stress:
+    name: 500-puzzle stress pass
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Cache Godot
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/sudoku-godot/${{ env.GODOT_VERSION }}
+          key: godot-linux-engine-${{ env.GODOT_VERSION }}-v1
+      - name: Install Godot
+        run: |
+          set -euo pipefail
+          engine_dir="$HOME/.cache/sudoku-godot/$GODOT_VERSION"
+          mkdir -p "$engine_dir"
+          if [[ ! -x "$engine_dir/godot" ]]; then
+            curl --fail --location --retry 3 \
+              --output /tmp/godot.zip \
+              "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+            echo "$GODOT_LINUX_SHA512  /tmp/godot.zip" | shasum -a 512 -c -
+            unzip -q /tmp/godot.zip -d /tmp/godot
+            install -m 0755 "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" "$engine_dir/godot"
+          fi
+          echo "$engine_dir" >> "$GITHUB_PATH"
+      - name: Generate and validate 500 puzzles
+        env:
+          SUDOKU_STRESS: "1"
+        run: godot --headless --path . --log-file /tmp/sudoku-stress.log --script tests/test_runner.gd

@@ -11,6 +11,8 @@ else
 fi
 
 GODOT_TEST_LOG="${TMPDIR:-/tmp}/sudoku-godot-tests.log"
+GODOT_IMPORT_LOG="${TMPDIR:-/tmp}/sudoku-godot-import.log"
+"$GODOT_BIN" --headless --path . --editor --quit-after 30 --log-file "$GODOT_IMPORT_LOG"
 "$GODOT_BIN" --headless --path . --log-file "$GODOT_TEST_LOG" --script tests/test_runner.gd
 deno test --allow-env backend/supabase/tests
 deno check backend/supabase/functions/get-ranked-challenge/index.ts

@@ -2,17 +2,21 @@
 .godot/
 
 # Exported applications and packages
-build/
-dist/
-exports/
+/build/
+/dist/
+/exports/
 
 # Local online-service configuration
 backend/supabase/.env
 backend/supabase/.temp/
+supabase/.temp/
 config/client.env
 config/client.env.local
 .env
 .env.local
+.env.*
+!.env.example
+!**/.env.example
 
 # Signing credentials and provisioning material
 *.keystore
@@ -21,11 +25,13 @@ config/client.env.local
 *.pfx
 *.mobileprovision
 *.cer
+*.der
+*.pem
 *.key
 
 # Generated native projects
-android/
-ios/
+/android/
+/ios/
 DerivedData/
 *.xcarchive
 

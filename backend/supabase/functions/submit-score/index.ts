@@ -50,7 +50,12 @@ Deno.serve(async (request) => {
     if (!Array.isArray(challenges) || challenges.length !== 1) return error("INVALID_CHALLENGE", "The ranked challenge is invalid.", 404);
     const challenge = challenges[0];
     const now = Date.now();
-    if (!challenge.active || now < Date.parse(challenge.available_from)) {
+    const challengeExpiresAt = Date.parse(challenge.expires_at);
+    if (
+      !challenge.active ||
+      now < Date.parse(challenge.available_from) ||
+      (submissionSource === "offline" && now > challengeExpiresAt)
+    ) {
       return error("CHALLENGE_EXPIRED", "The submission window has closed.", 410);
     }
     if (submissionSource === "offline") {
@@ -62,7 +67,7 @@ Deno.serve(async (request) => {
       if (tokenParts.length !== 2 || Number(tokenParts[0]) !== challenge.rules_version) return error("INVALID_TOKEN", "The challenge token is invalid.", 401);
       const expectedToken = await hmacHex(`${challenge.id}|${challenge.rules_version}|${challenge.expires_at}`);
       if (!safeEqual(tokenParts[1], expectedToken)) return error("INVALID_TOKEN", "The challenge token is invalid.", 401);
-      if (now > Date.parse(challenge.expires_at) + 86_400_000) return error("CHALLENGE_EXPIRED", "The submission window has closed.", 410);
+      if (now > challengeExpiresAt + 86_400_000) return error("CHALLENGE_EXPIRED", "The submission window has closed.", 410);
       if (!respectsClues(challenge.puzzle, body.final_board) || !validCompletedBoard(body.final_board)) {
         return error("INVALID_SCORE", "The submitted board is invalid.");
       }

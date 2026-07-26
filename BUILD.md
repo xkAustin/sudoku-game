@@ -1,5 +1,11 @@
 # Building Sudoku Game
 
+Bilingual delivery guides:
+[中文](docs/zh-CN/BUILD_GUIDE.md) ·
+[English](docs/en-US/BUILD_GUIDE.md). Platform-specific prerequisites,
+commands, output locations, run steps and troubleshooting live under each
+language's `build/` directory.
+
 Sudoku Game targets Godot 4.7 and uses the Compatibility renderer. The same
 GDScript project is exported to Android, iOS, macOS, Windows and Linux. Official
 Godot 4.7 export templates are required for every platform.
@@ -10,10 +16,28 @@ The release identity is:
 - Package and bundle identifier: `io.github.xkaustin.sudokugame`
 - Version: `1.0.0`
 
-The app is offline-first. Online ranking support remains disabled until the two
-public client values in `config/app_config.gd` are configured. Never put a
-Supabase service-role key, signing password or private certificate in this
-repository.
+## Current verification status
+
+The current working tree was exported with Godot 4.7.1 on 2026-07-26 into the
+ignored `build/verification-20260726/` directory:
+
+| Platform | Result on this host |
+|---|---|
+| Android | ARM64 debug APK exported; v2/v3 debug signature verified |
+| iOS | Unsigned Xcode project exported from a temporary preset with `CIUNSIGNED`; no IPA |
+| macOS | Universal debug app exported, ad-hoc signature verified, application binary launched successfully |
+| Windows | x86_64 debug EXE and PCK exported; not runnable on this macOS host |
+| Linux | x86_64 debug ELF and PCK exported; not runnable on this macOS host |
+
+The shared UI suite passed menu, generation, input, completion, ranked upload
+choice and cached leaderboard display. Real Supabase submit/read passed both
+anonymous REST and the Godot client. These shared checks do not replace
+platform-native device QA.
+
+The app is offline-first. Online ranking support remains disabled until
+`config/client.env` contains the two public client values and the SQL migration
+has been applied to the target Supabase project. Never put a Supabase
+service-role key, signing password or private certificate in this repository.
 
 ## Common preparation
 
@@ -32,6 +56,9 @@ repository.
    ```
 
 All presets exclude `backend/`, `tests/` and `build/` from the shipped game.
+They explicitly include `config/client.env` when it exists because it contains
+only a public project URL and publishable client key. Review that file before
+every export; a secret or `service_role` key is never valid there.
 Signing credentials must be supplied through local Godot editor settings,
 environment variables or CI secrets.
 
@@ -150,11 +177,40 @@ developer account. Final verification must run on an iPhone and iPad and cover
 portrait safe areas, native audio-file selection, device-default haptics,
 background/resume behavior and both appearance modes.
 
+Godot requires a syntactically valid Team ID even for project-only export. The
+GitHub Actions build replaces the empty value with the explicit non-production
+placeholder `CIUNSIGNED` only inside its disposable runner, then uploads the
+Xcode project. A real developer must replace it with their Apple Team ID before
+building or archiving.
+
+## GitHub Actions
+
+`.github/workflows/test.yml` runs the fast Godot/Deno checks on pushes and pull
+requests, and runs the 500-puzzle stress pass on `main`, manual dispatch and the
+weekly schedule.
+
+`.github/workflows/build.yml` installs and caches Godot 4.7.1 plus matching
+export templates, then produces:
+
+- Android debug APK on Ubuntu with Java 17 and Android SDK 36;
+- Linux and Windows debug artifacts on Ubuntu;
+- macOS debug app and an unsigned iOS Xcode project on macOS.
+
+Every third-party Action reference is pinned to an immutable commit. Every
+downloaded Godot engine/template archive is verified against the official
+4.7.1 SHA-512 list before extraction or execution; cache keys are versioned.
+Artifacts are retained for 14 days. The workflow intentionally contains no
+release signing credentials. Run it from GitHub's Actions page with
+`workflow_dispatch`, or by opening a pull request after the files are committed.
+YAML syntax and all equivalent local export commands were validated, but the
+new workflow cannot execute on GitHub until it has been committed and pushed.
+
 ## Release checklist
 
 - Tests pass with the same Godot version used for export.
 - Version values match in `project.godot`, `config/app_config.gd` and all presets.
-- Exported packages contain no tests, backend source, local `.env` files or keys.
+- Exported packages contain no tests, backend source or secret keys. The intended
+  `config/client.env` public client configuration may be present.
 - Windows and macOS artifacts are signed for public distribution.
 - Android `version/code` is incremented for each store release.
 - iOS build and short versions are incremented for each App Store upload.

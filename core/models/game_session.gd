@@ -1,7 +1,7 @@
 class_name GameSession
 extends RefCounted
 
-const DATA_VERSION := 3
+const DATA_VERSION := 4
 
 var puzzle := PackedInt32Array()
 var solution := PackedInt32Array()
@@ -14,6 +14,7 @@ var mistakes := 0
 var hints_used := 0
 var started_at := ""
 var last_saved_at := ""
+var backgrounded_at_unix_ms := 0
 var challenge_id := ""
 var challenge_token := ""
 var sequence := 0
@@ -55,7 +56,8 @@ func to_dict() -> Dictionary:
 		"solution": Array(solution), "board": Array(board), "grid_size": grid_size, "box_size": box_size,
 		"notes": Array(notes), "difficulty": difficulty, "mode": mode, "elapsed_ms": elapsed_ms,
 		"mistakes": mistakes, "hints_used": hints_used, "started_at": started_at,
-		"last_saved_at": Time.get_datetime_string_from_system(true), "challenge_id": challenge_id,
+		"last_saved_at": Time.get_datetime_string_from_system(true),
+		"backgrounded_at_unix_ms": backgrounded_at_unix_ms, "challenge_id": challenge_id,
 		"challenge_token": challenge_token, "sequence": sequence, "operation_count": operation_count,
 		"offline_ranked": offline_ranked, "undo_stack": undo_data,
 		"redo_stack": redo_data, "completed": completed, "client_version": AppConfig.APP_VERSION
@@ -81,6 +83,7 @@ static func from_dict(data: Dictionary) -> GameSession:
 	session.hints_used = maxi(0, int(data.get("hints_used", 0)))
 	session.started_at = str(data.get("started_at", ""))
 	session.last_saved_at = str(data.get("last_saved_at", ""))
+	session.backgrounded_at_unix_ms = maxi(0, int(data.get("backgrounded_at_unix_ms", 0)))
 	session.challenge_id = str(data.get("challenge_id", ""))
 	session.challenge_token = str(data.get("challenge_token", ""))
 	session.sequence = int(data.get("sequence", 0))

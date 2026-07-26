@@ -1,5 +1,15 @@
 # Sudoku Game
 
+Delivery documentation: [中文](docs/zh-CN/README.md) ·
+[English](docs/en-US/README.md)
+
+Two delivery paths are supported:
+
+- **Use a packaged build:** open [`builds/`](builds/). These artifacts are
+  generated from a sanitized source copy and are offline by default.
+- **Build from source:** follow the bilingual build guides, optionally add an
+  ignored publishable Supabase client configuration, then export with Godot.
+
 A complete offline-first Sudoku game for Godot 4.7 Stable. It targets Android,
 iOS, macOS, Windows and Linux without accounts, advertising, tracking SDKs or
 unrelated permissions. Network access is optional and used only for signed ranked
@@ -12,13 +22,15 @@ challenges, score synchronization and leaderboards.
   at two, uniqueness checks and weighted logic/search difficulty analysis.
 - Touch, mouse and keyboard play; notes, transactional cleanup, undo/redo, hints,
   conflicts, timer, pause, completion flow, settings and statistics.
-- Light, dark, system and high-contrast themes, 48 px targets and reduced motion.
-- Versioned atomic JSON under `user://`, corruption backup, debounced autosave,
-  resumable games and a random installation UUID unrelated to hardware identifiers.
-- Per-difficulty leaderboard snapshots with the player's own rank, cached challenges,
-  a bounded backoff queue and idempotent uploads.
-- Supabase migrations, restrictive RLS, views, signed challenges and three Deno
-  Edge Functions with server-side score validation.
+- Light, dark, system and high-contrast themes, interface scaling, 48 px targets
+  and reduced motion.
+- Versioned atomic JSON under `user://`, main/temporary/backup recovery, debounced
+  autosave, resumable games and a random installation UUID unrelated to hardware
+  identifiers.
+- A global Top 100 leaderboard with the player's own rank, offline snapshots,
+  a bounded retry queue and highest-score-only uploads.
+- A Supabase Data API client, restrictive RLS, an atomic score RPC, plus optional
+  signed-challenge Edge Functions for future server-verified ranked play.
 - Export presets and release guidance for every target platform.
 
 ## Architecture and data flow
@@ -30,9 +42,9 @@ GameService and ranked/leaderboard services
 		↓
 GameSession, MoveRecord, Sudoku core
 		↓
-SaveManager (user:// JSON) or NetworkManager (Edge Functions)
+SaveManager (user:// JSON), SupabaseClient (Data API) or NetworkManager (optional Edge Functions)
 		↓
-Supabase PostgreSQL behind service-role-only Edge Functions
+Supabase PostgreSQL (restricted Data API RPC) or optional service-role Edge Functions
 ```
 
 The core under `core/sudoku` has no UI dependency. UI never opens files; it calls
@@ -45,12 +57,17 @@ Key flows:
 2. Move: UI sends intent → `GameService` creates one `MoveRecord`, including peer
    note cleanup → UI refreshes and the save is debounced.
 3. Ranked game: the client presents fair-play rules and temporarily locks puzzle
-   assistance without changing global settings → server returns a signed fixed puzzle
-   without its solution → client verifies uniqueness and caches it → completion enters
-   the local queue → reconnect triggers bounded retry → server validates and stores it.
-4. Server: validate shape/name/timing → idempotency → load challenge → HMAC/rule/time
-   checks → validate clues, rows, columns and boxes → peppered solution hash → rate
-   limit → verified insert → personal-best response.
+   assistance without changing global settings → it uses a server challenge when
+   available or generates an offline puzzle → completion enters the local queue.
+4. Leaderboard: reconnect sends the completed session's raw metrics and an
+   idempotency UUID → a restricted database function validates the metrics,
+   rate-limits the installation and calculates the score server-side →
+   PostgreSQL atomically keeps only the installation's higher score → the global
+   Top 100 is cached for offline use.
+
+The Data API leaderboard is the supported online path. The signed-challenge Edge
+Functions are retained as optional future infrastructure and are not required for
+the global leaderboard.
 
 ## Directory map
 
@@ -60,6 +77,7 @@ config/                   public product/API constants and configuration example
 core/models/              session and transactional move model
 core/services/            game, challenge and leaderboard application services
 core/sudoku/              solver, generator, validator, uniqueness and difficulty
+scripts/                  isolated Supabase Data API and leaderboard modules
 ui/components/            accessible Sudoku cell control
 ui/scenes/main/           responsive application and main scene
 ui/themes/                theme resource and builder
@@ -69,18 +87,28 @@ tests/                    executable Godot runner and full-suite command
 docs/                     platform release instructions
 ```
 
-## Run locally
+## Environment and local run
 
-1. Install Godot **4.7 Stable**.
+Required for normal development:
+
+- Godot **4.7.1 Stable** with matching export templates.
+- Deno 2.x for backend validation and TypeScript checks.
+
+Additional release tools are platform-specific: OpenJDK 17 and Android SDK 36
+for Android; Xcode and the iOS SDK for Apple exports; Supabase CLI 2.x only when
+deploying or inspecting the backend.
+
+1. Install Godot 4.7.1 Stable.
 2. Open this directory in Godot; SVG icons import automatically.
 3. Press F5 or run `godot --path .`.
 
 No network configuration is required. The entry scene is
 `res://ui/scenes/main/main.tscn`.
 
-For online development, copy the two public values from
-`config/client.env.example` into `config/app_config.gd`. Never put a service-role
-key in the client. Follow [the backend guide](backend/supabase/README.md).
+For online development, copy `config/client.env.example` to the ignored
+`config/client.env` and provide the project Data API URL and publishable key.
+Never put a secret or service-role key in the client. Follow
+[the Supabase leaderboard guide](SUPABASE.md).
 
 Product name, package ID, app version and API version are grouped in
 `config/app_config.gd`; mirror identity changes into `project.godot` and
@@ -110,14 +138,42 @@ Run the fast suite:
 ./tests/run_all.sh
 ```
 
-It exits nonzero on any GDScript, Sudoku, serialization, Deno test or TypeScript
-failure. Run the required 100-puzzles-per-difficulty stress pass in CI with:
+The script performs the required headless Godot import first, so it also works
+in a fresh clone with no `.godot` cache. It exits nonzero on any GDScript,
+Sudoku, serialization, Deno test or TypeScript failure. GitHub Actions runs this
+fast suite on each push and pull request. Run the
+100-puzzles-per-difficulty stress pass locally with:
 
 ```sh
 SUDOKU_STRESS=1 ./tests/run_all.sh
 ```
 
 Stress checks legality, solvability, uniqueness, analyzed difficulty and variety.
+Run the shared UI flow with:
+
+```sh
+godot --headless --path . \
+  --log-file /tmp/sudoku-ui-smoke.log \
+  --script tests/ui_smoke_runner.gd
+```
+
+With an ignored `config/client.env` configured for a test project, the optional
+Godot HTTPS check is:
+
+```sh
+godot --headless --path . --script tests/supabase_live_runner.gd
+```
+
+The repository also contains a repeatable anonymous REST/RLS check at
+`backend/supabase/tests/live_data_api.sh`. Both live checks create a temporary
+leaderboard row which a project administrator must delete afterward. See
+[`TEST_STRATEGY.md`](TEST_STRATEGY.md) for scope and cleanup.
+
+GitHub Actions runs the fast and scheduled stress suites. A separate build
+workflow exports Android debug, Linux debug, Windows debug, macOS debug and an
+unsigned iOS Xcode project, caching the matching Godot binary and export
+templates. Third-party Actions are pinned to immutable commits, and Godot
+archives are checked against the official 4.7.1 SHA-512 values before use.
 
 ## Local storage
 
@@ -125,10 +181,13 @@ The app uses `profile.json`, `settings.json`, `active_games.json`,
 `statistics.json`, `installation.json`, `cached_challenges.json`,
 `leaderboard_cache.json` and `pending_submissions.json` under `user://`. Writes go
 to a temporary file, flush, rotate the previous file to `.bak`, then atomically
-rename. Invalid JSON is renamed `.corrupt-TIMESTAMP` and defaults are restored.
+rename. Reads try the main file, `.tmp`, then `.bak`; a valid recovery candidate
+is promoted to a new main file. Invalid JSON is renamed `.corrupt-TIMESTAMP`.
 
 Documents are versioned independently; missing fields receive safe defaults or are
-migrated when the app starts.
+migrated when the app starts. Reset Local Data removes progress, statistics,
+settings, caches, pending/dead-letter uploads and imported audio while deliberately
+preserving only the random installation UUID.
 
 ## Export
 
@@ -137,17 +196,43 @@ use `export_presets.cfg`. See the complete [build guide](BUILD.md) and
 [platform status](docs/PLATFORMS.md) for Android ARM64, iOS/Xcode, macOS
 Universal, Windows x86_64 and Linux X11/Wayland.
 
+Platform-specific bilingual instructions are under
+[`docs/zh-CN/build/`](docs/zh-CN/build/) and
+[`docs/en-US/build/`](docs/en-US/build/).
+
+On 2026-07-26 the current working tree successfully produced Android debug,
+Linux debug, Windows debug and ad-hoc macOS Universal artifacts. Sanitized
+offline packages and their checksums are tracked under [`builds/`](builds/).
+An unsigned iOS Xcode project was also generated locally but is not committed
+because an installable IPA requires Apple signing. Only the macOS artifact could
+be launched on this host. Target-device QA and release signing remain separate
+requirements.
+
 ## Security and known limits
 
-RLS denies anonymous/authenticated table and view access. Only service-role Edge
-Functions can read unpublished challenges or write scores. Challenge responses omit
-the answer and `solution_hash`. Server inputs are rebuilt and checked; errors have a
-stable structure without stack traces. Never log secrets or complete tokens.
+RLS is enabled and forced on the score and submission-guard tables. Anonymous
+clients have no direct `SELECT`, `INSERT`, `UPDATE` or `DELETE` privilege.
+`get_leaderboard` is the only public read path and `submit_score` is the only
+public mutation path. The submit RPC validates difficulty, plausible duration,
+mistakes, ranked hint use and move count, deduplicates a submission UUID,
+limits each installation UUID to ten accepted submissions per minute, calculates
+the final score server-side and atomically keeps only improvements. The client
+uses only a publishable key.
 
-Offline completion data resides on a player-controlled device and can be modified
-by an advanced attacker. Signed challenges, final-board validation, plausibility
-checks, rate limits and idempotency are baseline anti-cheat—not bank-grade or
-esports-grade security.
+The migration and these API properties were deployed and verified against the
+maintainer's Supabase project on 2026-07-26. A different project must apply and
+verify the same migration independently; exact commands are in `SUPABASE.md`.
+The final secret, history, permission and repository scan record is in
+[`SECURITY_CHECK_REPORT.md`](SECURITY_CHECK_REPORT.md).
+
+Offline completion data and the anonymous UUID reside on a player-controlled
+device and can be modified by an advanced attacker. An attacker can still select
+a fresh UUID, fabricate metrics that fall inside the accepted ranges, replay
+requests after the rate-limit window, or patch the client. The server-side
+calculation prevents arbitrary final-score writes but does not prove that a real
+puzzle was solved. The public Data API leaderboard is therefore appropriate for
+casual competition, not esports-grade anti-cheat. Stronger guarantees require
+authenticated players and server-issued, server-verifiable challenges.
 
 The analyzer implements naked/hidden singles and combines candidate complexity,
 search nodes and backtrack depth into stable bands. It does not produce a human

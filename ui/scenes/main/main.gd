@@ -4,6 +4,7 @@ const DIFFICULTY_ZH := ["入门", "简单", "中等", "困难", "专家", "终�
 const DIFFICULTY_EN := ["Beginner", "Easy", "Medium", "Hard", "Expert", "Ultimate"]
 const THEME_VALUES := ["system", "light", "dark"]
 const LANGUAGE_VALUES := ["system", "zh", "en"]
+const UI_SCALE_VALUES := ["0.9", "1.0", "1.1"]
 const SHORTCUT_ACTIONS := ["undo", "redo", "erase", "notes", "pause", "hint", "new_game", "settings"]
 const MAX_CUSTOM_SOUND_BYTES := 10 * 1024 * 1024
 const RuntimeAudioLoaderScript := preload("res://ui/audio/runtime_audio_loader.gd")
@@ -233,10 +234,34 @@ func _build_shell() -> void:
 func _update_shell_width() -> void:
 	if shell_outer != null:
 		var side_margin := 28 if _is_wide_layout() else 24
-		shell_margin.add_theme_constant_override("margin_left", side_margin)
-		shell_margin.add_theme_constant_override("margin_right", side_margin)
+		var safe_insets := _safe_area_insets()
+		shell_margin.add_theme_constant_override("margin_left", maxi(side_margin, int(ceil(safe_insets.x)) + 12))
+		shell_margin.add_theme_constant_override("margin_right", maxi(side_margin, int(ceil(safe_insets.z)) + 12))
+		shell_margin.add_theme_constant_override("margin_top", maxi(10, int(ceil(safe_insets.y)) + 8))
+		shell_margin.add_theme_constant_override("margin_bottom", maxi(10, int(ceil(safe_insets.w)) + 8))
 		var maximum_width := 2440.0 if _is_wide_layout() else 1120.0
-		shell_outer.custom_minimum_size.x = clampf(size.x - side_margin * 2.0, 320.0, maximum_width)
+		var available_width := size.x - float(shell_margin.get_theme_constant("margin_left") + shell_margin.get_theme_constant("margin_right"))
+		shell_outer.custom_minimum_size.x = clampf(available_width, 320.0, maximum_width)
+		if toast_panel != null:
+			var toast_bottom := maxf(18.0, safe_insets.w + 12.0)
+			toast_panel.offset_bottom = -toast_bottom
+			toast_panel.offset_top = -toast_bottom - 58.0
+
+func _safe_area_insets() -> Vector4:
+	if not OS.has_feature("mobile"):
+		return Vector4.ZERO
+	var screen_size := DisplayServer.screen_get_size()
+	var safe_rect := DisplayServer.get_display_safe_area()
+	if screen_size.x <= 0 or screen_size.y <= 0 or safe_rect.size.x <= 0 or safe_rect.size.y <= 0:
+		return Vector4.ZERO
+	var scale_x := size.x / float(screen_size.x)
+	var scale_y := size.y / float(screen_size.y)
+	return Vector4(
+		maxf(0.0, safe_rect.position.x * scale_x),
+		maxf(0.0, safe_rect.position.y * scale_y),
+		maxf(0.0, (screen_size.x - safe_rect.end.x) * scale_x),
+		maxf(0.0, (screen_size.y - safe_rect.end.y) * scale_y)
+	)
 
 func _on_layout_resized() -> void:
 	_update_shell_width()
@@ -275,6 +300,7 @@ func _apply_theme() -> void:
 	var dark := mode == "dark" or (mode == "system" and DisplayServer.is_dark_mode_supported() and DisplayServer.is_dark_mode())
 	theme = ThemeManager.build(dark, bool(AppState.settings.get("high_contrast", false)))
 	content.scale = Vector2.ONE * float(AppState.settings.get("ui_scale", 1.0))
+	_update_shell_width()
 	var panel: Panel = get_node_or_null("Background")
 	if panel != null:
 		var box := StyleBoxFlat.new()
@@ -363,8 +389,12 @@ func _ensure_shortcut_settings() -> void:
 	if not AppState.settings.has("ranked_auto_upload"):
 		AppState.settings["ranked_auto_upload"] = false
 		changed = true
-	if int(AppState.settings.get("data_version", 1)) < 8:
-		AppState.settings["data_version"] = 8
+	var ui_scale := snappedf(clampf(float(AppState.settings.get("ui_scale", 1.0)), 0.9, 1.1), 0.1)
+	if not is_equal_approx(float(AppState.settings.get("ui_scale", 1.0)), ui_scale):
+		AppState.settings["ui_scale"] = ui_scale
+		changed = true
+	if int(AppState.settings.get("data_version", 1)) < 9:
+		AppState.settings["data_version"] = 9
 		changed = true
 	if changed:
 		AppState.save_settings()
@@ -1562,6 +1592,16 @@ func _show_settings() -> void:
 	language_label.text = _l("语言", "Language")
 	profile_column.add_child(language_label)
 	_add_choice_picker(profile_column, [_l("跟随系统", "System"), "简体中文", "English"], LANGUAGE_VALUES, str(AppState.settings.get("language", "system")), Callable(self, "_set_language_value"))
+	var scale_label := Label.new()
+	scale_label.text = _l("界面缩放", "Interface scale")
+	profile_column.add_child(scale_label)
+	_add_choice_picker(
+		profile_column,
+		["90%", "100%", "110%"],
+		UI_SCALE_VALUES,
+		"%.1f" % float(AppState.settings.get("ui_scale", 1.0)),
+		Callable(self, "_set_ui_scale_value")
+	)
 	_add_section_title(preferences_column, _l("游戏与辅助功能", "Gameplay & Accessibility"))
 	var toggle_grid := GridContainer.new()
 	toggle_grid.columns = 2 if wide else 1
@@ -1587,6 +1627,28 @@ func _show_settings() -> void:
 	leaderboard_note.theme_type_variation = "SettingsNote"
 	leaderboard_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	preferences_column.add_child(leaderboard_note)
+	var failed_uploads := SyncManager.failed_count()
+	if failed_uploads > 0:
+		var failed_note := Label.new()
+		failed_note.name = "FailedUploadNote"
+		failed_note.text = _l(
+			"%d 条成绩因服务器拒绝而停止重试。" % failed_uploads,
+			"%d result(s) stopped retrying after a server rejection." % failed_uploads
+		)
+		failed_note.theme_type_variation = "SettingsNote"
+		failed_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		preferences_column.add_child(failed_note)
+		var failed_actions := HBoxContainer.new()
+		failed_actions.add_theme_constant_override("separation", 10)
+		preferences_column.add_child(failed_actions)
+		var retry_failed := _button(_l("重新尝试", "Try again"))
+		retry_failed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		retry_failed.pressed.connect(_retry_failed_uploads)
+		failed_actions.add_child(retry_failed)
+		var discard_failed := _button(_l("删除失败项", "Delete failed"))
+		discard_failed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		discard_failed.pressed.connect(_discard_failed_uploads)
+		failed_actions.add_child(discard_failed)
 	var privacy := Label.new()
 	privacy.text = _l("隐私说明：不收集真实身份、硬件标识、位置、通讯录或广告标识。只有选择上传时，排位才会提交随机安装 ID、显示名称、题目与游戏成绩。", "Privacy: We do not collect your real identity, hardware identifiers, location, contacts or advertising identifiers. Ranked play submits a random installation ID, display name, puzzle and game result only when upload is selected.")
 	privacy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1623,7 +1685,7 @@ func _show_settings() -> void:
 func _show_leaderboard() -> void:
 	_current_view = "leaderboard"
 	_clear_content()
-	_add_back_header(_l("排行榜", "Leaderboard"), _l("前 100 名；离线时显示缓存", "Top 100 · Cached results are available offline"))
+	_add_back_header(_l("全球排行榜", "Global Leaderboard"), _l("全球前 100 名；离线时显示缓存", "Global Top 100 · Cached results are available offline"))
 	var wide := _is_wide_layout()
 	var scroll := _page_scroll()
 	content.add_child(scroll)
@@ -1646,11 +1708,11 @@ func _show_leaderboard() -> void:
 	controls_body.add_theme_constant_override("separation", 12)
 	controls_margin.add_child(controls_body)
 	var controls_title := Label.new()
-	controls_title.text = _l("查看本周排位", "View this week's ranking")
+	controls_title.text = _l("查看全球最高分", "View global high scores")
 	controls_title.add_theme_font_size_override("font_size", 28)
 	controls_body.add_child(controls_title)
 	var controls_note := Label.new()
-	controls_note.text = _l("排行榜默认只读取本地缓存；联网刷新时会先上传已选择上传的本地成绩，再获取最新排名。", "The leaderboard reads local cache by default. An online refresh first uploads saved results you chose to share, then fetches the latest ranking.")
+	controls_note.text = _l("排行榜默认只读取本地缓存；联网刷新时会先上传已选择共享的成绩，再获取全球前 100 名。每台设备只保留最高分。", "The leaderboard reads local cache by default. An online refresh first uploads results you chose to share, then fetches the global Top 100. Only each device's highest score is kept.")
 	controls_note.theme_type_variation = "SectionSummary"
 	controls_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	controls_body.add_child(controls_note)
@@ -1658,15 +1720,6 @@ func _show_leaderboard() -> void:
 	selector_row.add_theme_constant_override("separation", 12)
 	selector_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls_body.add_child(selector_row)
-	var difficulty_column := VBoxContainer.new()
-	difficulty_column.add_theme_constant_override("separation", 6)
-	difficulty_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	selector_row.add_child(difficulty_column)
-	var difficulty_label := Label.new()
-	difficulty_label.text = _l("难度", "Difficulty")
-	difficulty_label.theme_type_variation = "SettingsNote"
-	difficulty_column.add_child(difficulty_label)
-	_add_choice_picker(difficulty_column, DIFFICULTY_ZH if _language() != "en" else DIFFICULTY_EN, ["0", "1", "2", "3", "4", "5"], str(_leaderboard_difficulty), Callable(self, "_set_leaderboard_difficulty"))
 	var action_column := VBoxContainer.new()
 	action_column.add_theme_constant_override("separation", 6)
 	action_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1700,7 +1753,7 @@ func _show_leaderboard() -> void:
 	_leaderboard_results.add_theme_constant_override("separation", 14)
 	_leaderboard_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_child(_leaderboard_results)
-	_leaderboard_snapshot = leaderboard_service.cached_snapshot(_leaderboard_difficulty)
+	_leaderboard_snapshot = leaderboard_service.cached_snapshot()
 	_render_leaderboard_snapshot()
 	if network_allowed and bool(AppState.settings.get("leaderboard_auto_refresh", false)) and AppConfig.online_configured():
 		call_deferred("_refresh_leaderboard")
@@ -1742,7 +1795,7 @@ func _refresh_leaderboard() -> void:
 		return
 	if loading != null:
 		loading.text = _l("正在获取最新排名…", "Fetching the latest ranking…")
-	leaderboard_service.fetch(_leaderboard_difficulty, AppState.installation_id)
+	leaderboard_service.fetch(0, AppState.installation_id)
 
 func _on_sync_flush_completed(success: bool) -> void:
 	if not _leaderboard_refresh_after_sync:
@@ -1755,7 +1808,7 @@ func _on_sync_flush_completed(success: bool) -> void:
 	var loading := content.find_child("LeaderboardLoading", true, false) as Label
 	if loading != null:
 		loading.text = _l("正在获取最新排名…", "Fetching the latest ranking…")
-	leaderboard_service.fetch(_leaderboard_difficulty, AppState.installation_id)
+	leaderboard_service.fetch(0, AppState.installation_id)
 
 func _show_leaderboard_snapshot(snapshot: Dictionary) -> void:
 	if _current_view != "leaderboard":
@@ -1783,7 +1836,7 @@ func _render_leaderboard_snapshot() -> void:
 		empty_card.custom_minimum_size.y = 150
 		_leaderboard_results.add_child(empty_card)
 		var empty := Label.new()
-		empty.text = _l("尚无此难度的排行榜缓存\n授予联网权限并刷新后，数据会保存在本机供离线查看。", "No cached ranking for this difficulty yet.\nGrant network access and refresh to save a snapshot for offline viewing.")
+		empty.text = _l("尚无全球排行榜缓存\n授予联网权限并刷新后，数据会保存在本机供离线查看。", "No global leaderboard cache yet.\nGrant network access and refresh to save a snapshot for offline viewing.")
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1802,7 +1855,7 @@ func _render_leaderboard_snapshot() -> void:
 	var entries: Array = snapshot.get("entries", []) if snapshot.get("entries", []) is Array else []
 	if entries.is_empty():
 		var empty_list := Label.new()
-		empty_list.text = _l("当前挑战还没有有效成绩", "No valid results for this challenge yet")
+		empty_list.text = _l("排行榜还没有有效成绩", "The leaderboard has no valid scores yet")
 		empty_list.theme_type_variation = "SectionSummary"
 		_leaderboard_results.add_child(empty_list)
 		return
@@ -1819,7 +1872,7 @@ func _add_leaderboard_self_card(parent: Container, entry: Dictionary) -> void:
 	parent.add_child(card)
 	if entry.is_empty():
 		var empty := Label.new()
-		empty.text = _l("暂无我的排位成绩 · 完成排位并联网刷新后显示", "No ranked result yet · Complete a ranked game and refresh online")
+		empty.text = _l("暂无我的在线成绩 · 完成排位并联网刷新后显示", "No online score yet · Complete a ranked game and refresh online")
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1840,13 +1893,13 @@ func _add_leaderboard_self_card(parent: Container, entry: Dictionary) -> void:
 	name.text = str(entry.get("display_name", AppState.profile.get("display_name", "Player")))
 	identity.add_child(name)
 	var detail := Label.new()
-	detail.text = _l("错误 %d · 操作 %d", "%d mistakes · %d moves") % [int(entry.get("mistakes", 0)), int(entry.get("move_count", 0))]
+	detail.text = _l("设备最高积分", "Device high score")
 	detail.theme_type_variation = "SectionSummary"
 	identity.add_child(detail)
-	var time := Label.new()
-	time.text = _format_time(int(entry.get("duration_ms", 0)))
-	time.add_theme_font_size_override("font_size", 30)
-	row.add_child(time)
+	var score := Label.new()
+	score.text = str(int(entry.get("score", 0)))
+	score.add_theme_font_size_override("font_size", 30)
+	row.add_child(score)
 
 func _add_leaderboard_row(parent: Container, entry_value: Variant, fallback_rank: int) -> void:
 	if not entry_value is Dictionary:
@@ -1867,13 +1920,10 @@ func _add_leaderboard_row(parent: Container, entry_value: Variant, fallback_rank
 	name.text = str(entry.get("display_name", "Player"))
 	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(name)
-	var mistakes := Label.new()
-	mistakes.text = _l("错误 %d · 操作 %d", "%d mistakes · %d moves") % [int(entry.get("mistakes", 0)), int(entry.get("move_count", 0))]
-	mistakes.theme_type_variation = "SectionSummary"
-	row.add_child(mistakes)
-	var time := Label.new()
-	time.text = _format_time(int(entry.get("duration_ms", 0)))
-	row.add_child(time)
+	var score_label := Label.new()
+	score_label.text = _l("积分 %d", "%d pts") % int(entry.get("score", 0))
+	score_label.add_theme_color_override("font_color", theme.get_color("accent", "App"))
+	row.add_child(score_label)
 
 func _resume_saved(mode: String, difficulty: int) -> void:
 	var saved := AppState.load_session(mode, difficulty)
@@ -1912,6 +1962,24 @@ func _set_language_value(value: String) -> void:
 	AppState.save_settings()
 	_build_shell_labels()
 	_show_settings()
+
+func _set_ui_scale_value(value: String) -> void:
+	var scale := snappedf(clampf(value.to_float(), 0.9, 1.1), 0.1)
+	AppState.settings["ui_scale"] = scale
+	AppState.save_settings()
+	_show_settings()
+
+func _retry_failed_uploads() -> void:
+	var restored := SyncManager.retry_failed()
+	if restored > 0:
+		_show_settings()
+		_show_toast(_l("失败成绩已移回上传队列", "Failed results returned to the upload queue"))
+
+func _discard_failed_uploads() -> void:
+	var removed := SyncManager.discard_failed()
+	if removed > 0:
+		_show_settings()
+		_show_toast(_l("失败成绩已删除", "Failed results deleted"))
 
 func _build_shell_labels() -> void:
 	if shell_outer == null:
@@ -2028,7 +2096,7 @@ func _reset_data() -> void:
 	title.add_theme_font_size_override("font_size", 32)
 	card_content.add_child(title)
 	var message := Label.new()
-	message.text = _l("这会清除本地游戏进度、统计和设置。随机安装 ID 将保留。\n此操作无法撤销。", "This clears local progress, statistics and settings. The random installation ID is kept.\nThis action cannot be undone.")
+	message.text = _l("这会清除游戏进度、统计、设置、排行榜缓存、上传队列和自定义音频。随机安装 ID 将保留。\n此操作无法撤销。", "This clears game progress, statistics, settings, leaderboard caches, upload queues and custom audio. The random installation ID is kept.\nThis action cannot be undone.")
 	message.add_theme_font_size_override("font_size", 22)
 	message.add_theme_color_override("font_color", theme.get_color("muted", "App"))
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2050,6 +2118,13 @@ func _reset_data() -> void:
 
 func _perform_reset_data(overlay: Control) -> void:
 	AppState.reset_local_data()
+	game_service.session = null
+	game_service.paused = false
+	_pending_ranked_submission.clear()
+	_ranked_result_session = null
+	_leaderboard_snapshot.clear()
+	ui_sounds.reload_custom_sound("")
+	FeedbackManager.reload_custom_sound()
 	overlay.queue_free()
 	_show_menu()
 	_show_toast(_l("本地数据已重置，随机安装 ID 已保留", "Local data reset. The random installation ID was kept."))

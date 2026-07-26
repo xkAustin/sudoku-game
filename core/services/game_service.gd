@@ -63,10 +63,11 @@ func start_session(result: Dictionary) -> void:
 
 func resume_session(saved: GameSession) -> void:
 	session = saved
+	paused = false
+	_apply_background_elapsed()
 	AppState.set_session(session)
 	selected_index = _first_empty()
 	notes_mode = false
-	paused = false
 	EventBus.session_changed.emit()
 
 func select(index: int) -> void:
@@ -136,8 +137,23 @@ func move_selection(row_delta: int, column_delta: int) -> void:
 
 func set_paused(value: bool) -> void:
 	paused = value
+	if paused and session != null:
+		session.backgrounded_at_unix_ms = 0
 	AppState.save_session_now()
 	EventBus.session_changed.emit()
+
+func _notification(what: int) -> void:
+	if session == null or session.completed:
+		return
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		if session.mode == "ranked" and not paused:
+			session.backgrounded_at_unix_ms = _unix_time_ms()
+		else:
+			session.backgrounded_at_unix_ms = 0
+		AppState.save_session_now()
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		_apply_background_elapsed()
+		AppState.save_session_now()
 
 func effective_setting(key: String, default_value: bool = true) -> bool:
 	if session != null and session.mode == "ranked" and RANKED_SETTING_OVERRIDES.has(key):
@@ -183,6 +199,7 @@ func _apply_new_record(record: MoveRecord, error_feedback: bool = false) -> void
 	if session.mode == "ranked" and session.mistakes >= 3:
 		session.completed = true
 		paused = false
+		AppState.record_failure()
 		AppState.clear_session(session.mode, session.difficulty)
 		failed.emit(session)
 		return
@@ -196,6 +213,18 @@ func _apply_new_record(record: MoveRecord, error_feedback: bool = false) -> void
 func _state_changed() -> void:
 	AppState.request_save()
 	EventBus.session_changed.emit()
+
+func _apply_background_elapsed(now_ms: int = 0) -> void:
+	if session == null or session.backgrounded_at_unix_ms <= 0:
+		return
+	var current_ms := now_ms if now_ms > 0 else _unix_time_ms()
+	if session.mode == "ranked" and not paused and current_ms > session.backgrounded_at_unix_ms:
+		session.elapsed_ms += current_ms - session.backgrounded_at_unix_ms
+	session.backgrounded_at_unix_ms = 0
+	EventBus.session_changed.emit()
+
+func _unix_time_ms() -> int:
+	return int(Time.get_unix_time_from_system() * 1000.0)
 
 func _first_empty() -> int:
 	if session == null:

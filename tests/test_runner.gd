@@ -11,7 +11,10 @@ func _run() -> void:
 	_test_validator()
 	_test_generator()
 	_test_session_roundtrip()
+	_test_save_manager_recovery()
+	_test_background_timing()
 	_test_hexadoku()
+	_test_online_leaderboard()
 	print("GDScript tests: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -83,6 +86,51 @@ func _test_session_roundtrip() -> void:
 	_assert(restored.undo_stack.size() == 1, "undo stack round trip")
 	_assert(restored.operation_count == 3 and restored.offline_ranked, "session operation count and offline ranked state round trip")
 
+func _test_save_manager_recovery() -> void:
+	var save_manager := root.get_node("SaveManager")
+	var file_name := "test-save-manager-%d.json" % Time.get_ticks_usec()
+	var path := "user://" + file_name
+	save_manager.remove_json(file_name)
+	_assert(save_manager.write_json(file_name, {"revision": 1}), "save manager writes initial JSON")
+	_assert(save_manager.write_json(file_name, {"revision": 2}), "save manager rotates a previous JSON backup")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var backup_recovery: Dictionary = save_manager.read_json(file_name, {})
+	_assert(int(backup_recovery.get("revision", 0)) == 1, "save manager restores a valid backup when the main file is missing")
+	_assert(FileAccess.file_exists(path), "backup recovery promotes a new main file")
+	save_manager.remove_json(file_name)
+	var temporary := FileAccess.open(path + ".tmp", FileAccess.WRITE)
+	temporary.store_string(JSON.stringify({"revision": 3}))
+	temporary.close()
+	var temporary_recovery: Dictionary = save_manager.read_json(file_name, {})
+	_assert(int(temporary_recovery.get("revision", 0)) == 3, "save manager restores a valid temporary file")
+	_assert(FileAccess.file_exists(path), "temporary recovery promotes a new main file")
+	save_manager.remove_json(file_name)
+	_assert(save_manager.write_json(file_name, {"revision": 4}), "save manager prepares a corruption recovery baseline")
+	_assert(save_manager.write_json(file_name, {"revision": 5}), "save manager preserves a backup before corruption")
+	var corrupt_main := FileAccess.open(path, FileAccess.WRITE)
+	corrupt_main.store_string("{not valid json")
+	corrupt_main.close()
+	var corrupt_recovery: Dictionary = save_manager.read_json(file_name, {})
+	_assert(int(corrupt_recovery.get("revision", 0)) == 4, "save manager restores the backup when the main JSON is corrupt")
+	save_manager.remove_json(file_name)
+
+func _test_background_timing() -> void:
+	var puzzle := SudokuValidator.string_to_board("530070000600195000098000060800060003400803001700020006060000280000419005000080079")
+	var solution := SudokuSolver.new().solve(puzzle)
+	var service: Node = load("res://core/services/game_service.gd").new()
+	service.session = GameSession.create(puzzle, solution, 1, "ranked")
+	service.session.elapsed_ms = 500
+	service.session.backgrounded_at_unix_ms = 1000
+	service._apply_background_elapsed(2500)
+	_assert(service.session.elapsed_ms == 2000, "ranked background time is added after resume")
+	_assert(service.session.backgrounded_at_unix_ms == 0, "ranked background marker is cleared after resume")
+	service.session.mode = "local"
+	service.session.elapsed_ms = 500
+	service.session.backgrounded_at_unix_ms = 1000
+	service._apply_background_elapsed(2500)
+	_assert(service.session.elapsed_ms == 500, "local games do not count background time")
+	service.free()
+
 func _test_hexadoku() -> void:
 	var result := HexadokuGenerator.new().generate(160016)
 	var puzzle: PackedInt32Array = result["puzzle"]
@@ -102,6 +150,36 @@ func _test_hexadoku() -> void:
 	_assert(SudokuValidator.string_to_board(encoded) == solution, "hexadoku string round trip")
 	_assert(SudokuValidator.is_complete(solution), "hexadoku completed board validates")
 	_assert(SudokuValidator.respects_clues(puzzle, solution), "hexadoku solution respects clues")
+
+func _test_online_leaderboard() -> void:
+	var baseline := {
+		"difficulty": 2,
+		"duration_ms": 180000,
+		"mistakes": 1,
+		"hints_used": 0,
+		"move_count": 90,
+	}
+	var baseline_score := OnlineLeaderboard.score_from_submission(baseline)
+	var faster := baseline.duplicate()
+	faster["duration_ms"] = 120000
+	var cleaner := baseline.duplicate()
+	cleaner["mistakes"] = 0
+	var harder := baseline.duplicate()
+	harder["difficulty"] = 3
+	_assert(OnlineLeaderboard.score_from_submission(faster) > baseline_score, "faster ranked completion earns more leaderboard points")
+	_assert(OnlineLeaderboard.score_from_submission(cleaner) > baseline_score, "fewer mistakes earn more leaderboard points")
+	_assert(OnlineLeaderboard.score_from_submission(harder) > baseline_score, "higher difficulty earns a larger leaderboard base")
+	var snapshot := OnlineLeaderboard.normalize_snapshot({
+		"entries": [{"rank": 1, "player_name": "Player One", "score": 2500000, "created_at": "2026-07-23T00:00:00Z"}],
+		"self_entry": {"rank": 4, "display_name": "Player", "score": 2100000},
+	})
+	_assert(snapshot.get("entries", []).size() == 1 and int(snapshot["entries"][0].get("score", 0)) == 2500000, "Data API leaderboard rows normalize")
+	_assert(int(snapshot.get("self_entry", {}).get("rank", 0)) == 4, "Data API snapshot preserves the player's global rank")
+	var app_config: Variant = load("res://config/app_config.gd").new()
+	app_config.supabase_url = "https://example.supabase.co/rest/v1/"
+	_assert(app_config.supabase_project_url() == "https://example.supabase.co", "Data API URL normalizes to the project root")
+	_assert(app_config.supabase_rest_url() == "https://example.supabase.co/rest/v1", "Data API URL restores the REST endpoint")
+	app_config.free()
 
 func _assert(condition: bool, message: String) -> void:
 	assertions += 1
