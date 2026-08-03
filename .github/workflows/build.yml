@@ -32,7 +32,7 @@ jobs:
             artifact: sudoku-linux-debug
             artifact_path: build/ci/linux
           - label: Windows debug
-            preset: Windows Desktop
+            preset: Windows
             output: build/ci/windows/SudokuGame.exe
             artifact: sudoku-windows-debug
             artifact_path: build/ci/windows

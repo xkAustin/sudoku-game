@@ -1,0 +1,34 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource path="res://debug/debug_main.gd" type="Script" id="1_main"]
+[ext_resource path="res://debug/DebugManager.gd" type="Script" id="2_manager"]
+[ext_resource path="res://debug/DebugPanel.tscn" type="PackedScene" id="3_panel"]
+[ext_resource path="res://debug/development_config.gd" type="Script" id="4_config"]
+
+[node name="DebugMain" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="ContentHost" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DebugManager" type="Node" parent="."]
+script = ExtResource("2_manager")
+
+[node name="DevelopmentConfig" type="Node" parent="DebugManager"]
+script = ExtResource("4_config")
+
+[node name="DebugPanelLayer" type="CanvasLayer" parent="."]
+layer = 100
+
+[node name="DebugPanel" parent="DebugPanelLayer" instance=ExtResource("3_panel")]

@@ -78,6 +78,7 @@ the global leaderboard.
 ```text
 autoload/                 state, atomic save, navigation, HTTP and synchronization
 config/                   public product/API constants and configuration example
+debug/                    Editor launcher, runtime panel, fixtures and live config
 core/models/              session and transactional move model
 core/services/            game, challenge and leaderboard application services
 core/sudoku/              solver, generator, validator, uniqueness and difficulty
@@ -108,8 +109,12 @@ deploying or inspecting the backend.
 2. Open this directory in Godot; SVG icons import automatically.
 3. Press F5 or run `godot --path .`.
 
-No network configuration is required. The entry scene is
-`res://ui/scenes/main/main.tscn`.
+No network configuration is required. Debug runs start at
+`res://debug/DebugMain.tscn`, which provides direct game/settings/leaderboard
+entry points and an `F12` runtime panel. Release exports automatically bypass
+the development UI and load `res://ui/scenes/main/main.tscn`. See
+[Development Mode](DEVELOPMENT.md) for hot reload, runtime configuration and
+startup arguments.
 
 For online development, copy `config/client.env.example` to the ignored
 `config/client.env` and provide the project Data API URL and publishable key.

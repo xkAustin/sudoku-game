@@ -23,6 +23,9 @@ Release 说明应标明平台、版本、校验值、签名状态和剩余 QA �
 godot --path .
 ```
 
+Debug 运行会进入开发快捷页；按 `F12` 可打开运行时调试面板。参数热重载、直接
+打开设置/排行榜/测试棋盘及正式版本隔离方式见[开发模式指南](DEVELOPMENT_GUIDE.md)。
+
 如需在线排行榜，复制 `config/client.env.example` 为被忽略的
 `config/client.env`，仅填写项目 URL 和 publishable key，并先部署 migration。
 
@@ -32,6 +35,7 @@ Releases 或平台商店，不进入默认分支。
 完整资料：
 
 - [构建总览](BUILD_GUIDE.md)
+- [开发模式](DEVELOPMENT_GUIDE.md)
 - [发布部署](DEPLOYMENT_GUIDE.md)
 - [Supabase](SUPABASE_GUIDE.md)
 - [安全说明](SECURITY_GUIDE.md)

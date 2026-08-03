@@ -13,14 +13,45 @@ shader_type canvas_item;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
 uniform float blur_lod = 5.8;
 uniform vec4 tint_color : source_color = vec4(0.95, 0.97, 1.0, 0.38);
+uniform float refraction_strength = 0.0024;
 
 void fragment() {
-	vec4 blurred = textureLod(screen_texture, SCREEN_UV, blur_lod);
+	vec2 liquid_offset = vec2(
+		sin(UV.y * 18.0 + UV.x * 5.0),
+		cos(UV.x * 17.0 - UV.y * 4.0)
+	) * refraction_strength;
+	vec4 blurred = textureLod(screen_texture, SCREEN_UV + liquid_offset, blur_lod);
 	vec2 point = abs(UV - vec2(0.5)) - vec2(0.455);
 	float distance_to_rounding = length(max(point, vec2(0.0))) + min(max(point.x, point.y), 0.0) - 0.045;
 	float mask = 1.0 - smoothstep(-0.0025, 0.0025, distance_to_rounding);
 	blurred.rgb = mix(blurred.rgb, tint_color.rgb, tint_color.a);
 	COLOR = vec4(blurred.rgb, mask * 0.985);
+}
+"""
+const LIQUID_BACKGROUND_SHADER_CODE := """
+shader_type canvas_item;
+
+uniform vec4 top_color : source_color = vec4(0.03, 0.07, 0.13, 1.0);
+uniform vec4 bottom_color : source_color = vec4(0.06, 0.16, 0.28, 1.0);
+uniform vec4 glow_a : source_color = vec4(0.20, 0.70, 1.0, 0.42);
+uniform vec4 glow_b : source_color = vec4(0.54, 0.38, 1.0, 0.28);
+
+float soft_orb(vec2 point, vec2 center, vec2 radius) {
+	vec2 delta = (point - center) / radius;
+	return 1.0 - smoothstep(0.0, 1.0, dot(delta, delta));
+}
+
+void fragment() {
+	vec2 uv = UV;
+	float vertical_mix = smoothstep(0.0, 1.0, uv.y + 0.06 * sin(uv.x * 4.2));
+	vec3 color = mix(top_color.rgb, bottom_color.rgb, vertical_mix);
+	float upper_glow = soft_orb(uv, vec2(0.16, 0.10), vec2(0.62, 0.52));
+	float lower_glow = soft_orb(uv, vec2(0.86, 0.84), vec2(0.58, 0.62));
+	float center_light = soft_orb(uv, vec2(0.55, 0.43), vec2(0.80, 0.74));
+	color = mix(color, glow_a.rgb, upper_glow * glow_a.a);
+	color = mix(color, glow_b.rgb, lower_glow * glow_b.a);
+	color += center_light * 0.035;
+	COLOR = vec4(color, 1.0);
 }
 """
 const ICONS := {
@@ -40,9 +71,12 @@ var ui_sounds := UISoundManager.new()
 var content: VBoxContainer
 var shell_outer: VBoxContainer
 var shell_margin: MarginContainer
+var brand_label: Label
+var status_pill: PanelContainer
 var status_label: Label
 var toast_panel: PanelContainer
 var toast_label: Label
+var background_layer: ColorRect
 var timer_label: Label
 var mistakes_label: Label
 var mistake_icon: TextureRect
@@ -50,6 +84,7 @@ var notes_button: Button
 var pause_button: Button
 var pause_overlay: Control
 var pause_blur_layer: ColorRect
+var pause_backbuffer: BackBufferCopy
 var cell_buttons: Array[SudokuCellButton] = []
 var number_buttons: Dictionary = {}
 var _ranked_difficulty := -1
@@ -75,6 +110,7 @@ var _pending_ranked_submission: Dictionary = {}
 var _ranked_result_session: GameSession
 var _ranked_upload_state := ""
 var _leaderboard_refresh_after_sync := false
+var _sound_customization_tween: Tween
 
 func _ready() -> void:
 	_ensure_shortcut_settings()
@@ -95,10 +131,12 @@ func _ready() -> void:
 	EventBus.toast_requested.connect(_show_toast)
 	EventBus.session_changed.connect(_refresh_game)
 	EventBus.settings_changed.connect(_apply_theme)
+	EventBus.settings_changed.connect(_build_shell_labels)
 	EventBus.network_changed.connect(_on_network_changed)
 	EventBus.pending_count_changed.connect(_on_pending_changed)
 	EventBus.navigation_requested.connect(_navigate)
 	_build_shell()
+	_build_shell_labels()
 	_last_wide_layout = _is_wide_layout()
 	_last_layout_size = size
 	resized.connect(_on_layout_resized)
@@ -110,6 +148,38 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if timer_label != null and is_instance_valid(timer_label) and game_service.session != null:
 		timer_label.text = _format_time(game_service.session.elapsed_ms) if bool(AppState.settings.get("show_timer", true)) else _l("计时已隐藏", "Timer hidden")
+
+# Debug 专用：为独立开发入口提供稳定的页面导航适配层，不暴露更多 UI 内部实现。
+func debug_open_view(destination: String) -> void:
+	if not AppConfig.development_mode:
+		return
+	match destination:
+		"settings":
+			_show_settings()
+		"leaderboard":
+			_show_leaderboard()
+		"difficulty":
+			_show_difficulty(false)
+		_:
+			_show_menu()
+
+func debug_start_session(session: GameSession) -> void:
+	# Debug 专用：复用正式 GameService，因此胜利、失败、存档和 UI 流程与真实游戏一致。
+	if not AppConfig.development_mode or session == null:
+		return
+	game_service.resume_session(session)
+	_show_game()
+
+func debug_snapshot() -> Dictionary:
+	# Debug 专用：只返回面板需要的只读状态，避免面板直接遍历主界面节点。
+	var session_text := "无对局"
+	if game_service.session != null:
+		session_text = "%s / 难度 %d / %s" % [
+			game_service.session.mode,
+			game_service.session.difficulty,
+			"已完成" if game_service.session.completed else "进行中",
+		]
+	return {"view": _current_view, "session": session_text}
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -176,10 +246,17 @@ func _input(input_event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _build_shell() -> void:
-	var background := Panel.new()
-	background.name = "Background"
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
+	background_layer = ColorRect.new()
+	background_layer.name = "Background"
+	background_layer.color = Color.WHITE
+	background_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var background_shader := Shader.new()
+	background_shader.code = LIQUID_BACKGROUND_SHADER_CODE
+	var background_material := ShaderMaterial.new()
+	background_material.shader = background_shader
+	background_layer.material = background_material
+	add_child(background_layer)
 	shell_margin = MarginContainer.new()
 	shell_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shell_margin.add_theme_constant_override("margin_left", 24)
@@ -192,18 +269,26 @@ func _build_shell() -> void:
 	shell_outer.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	shell_outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	shell_margin.add_child(shell_outer)
+	var top_glass := PanelContainer.new()
+	top_glass.name = "TopBarGlass"
+	top_glass.theme_type_variation = "TopBarGlass"
+	top_glass.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	shell_outer.add_child(top_glass)
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 10)
-	shell_outer.add_child(top)
-	var brand := Label.new()
-	brand.text = _l("SUDOKU / 数独", "SUDOKU")
-	brand.add_theme_font_size_override("font_size", 18)
-	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(brand)
+	top_glass.add_child(top)
+	brand_label = Label.new()
+	brand_label.text = "SUDOKU"
+	brand_label.theme_type_variation = "TopBarBrand"
+	brand_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(brand_label)
+	status_pill = PanelContainer.new()
+	status_pill.name = "TopBarStatusPill"
+	status_pill.theme_type_variation = "TopBarOfflineStatusPill"
+	top.add_child(status_pill)
 	status_label = Label.new()
-	status_label.text = _l("离线可玩", "Works offline")
-	status_label.add_theme_font_size_override("font_size", 15)
-	top.add_child(status_label)
+	status_label.theme_type_variation = "TopBarOfflineStatus"
+	status_pill.add_child(status_label)
 	content = VBoxContainer.new()
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -299,13 +384,17 @@ func _apply_theme() -> void:
 	var mode := str(AppState.settings.get("theme", "system"))
 	var dark := mode == "dark" or (mode == "system" and DisplayServer.is_dark_mode_supported() and DisplayServer.is_dark_mode())
 	theme = ThemeManager.build(dark, bool(AppState.settings.get("high_contrast", false)))
-	content.scale = Vector2.ONE * float(AppState.settings.get("ui_scale", 1.0))
+	# Scaling the content node only changed painting, not container measurement.
+	# Theme base scale keeps text, controls and their layout constraints in sync.
+	theme.default_base_scale = float(AppState.settings.get("ui_scale", 1.0))
+	content.scale = Vector2.ONE
 	_update_shell_width()
-	var panel: Panel = get_node_or_null("Background")
-	if panel != null:
-		var box := StyleBoxFlat.new()
-		box.bg_color = theme.get_color("background", "App")
-		panel.add_theme_stylebox_override("panel", box)
+	if background_layer != null and background_layer.material is ShaderMaterial:
+		var material := background_layer.material as ShaderMaterial
+		material.set_shader_parameter("top_color", Color("06101d") if dark else Color("f8fcff"))
+		material.set_shader_parameter("bottom_color", Color("102b49") if dark else Color("dcecff"))
+		material.set_shader_parameter("glow_a", Color(0.20, 0.72, 1.0, 0.34 if dark else 0.22))
+		material.set_shader_parameter("glow_b", Color(0.56, 0.38, 1.0, 0.25 if dark else 0.14))
 
 func _configure_initial_window() -> void:
 	if OS.has_feature("mobile"):
@@ -626,7 +715,7 @@ func _show_difficulty(ranked: bool) -> void:
 	difficulty_body.add_child(difficulty_grid)
 	var count := 6
 	for index in count:
-		var descriptions := [_l("直接候选，适合初次体验", "Straightforward candidates for first-time play"), _l("基础排除，节奏轻松", "Gentle elimination and a relaxed pace"), _l("候选组合，需要专注", "Candidate combinations that need focus"), _l("复杂排除，挑战推理", "Advanced elimination and deeper reasoning"), _l("深层逻辑与有限搜索", "Layered logic with limited search"), _l("16×16 棋盘 · 使用 1–9 与 A–G", "16×16 board · Uses 1–9 and A–G")]
+		var descriptions := [_l("直接候选，适合初次体验", "Straightforward candidates for first-time play"), _l("基础排除，节奏轻松", "Gentle elimination and a relaxed pace"), _l("候选组合，需要专注", "Candidate combinations that need focus"), _l("高级排除，挑战推理", "Advanced elimination and deeper reasoning"), _l("深层逻辑与有限搜索", "Layered logic with limited search"), _l("16×16 棋盘 · 使用 1–9 与 A–G", "16×16 board · Uses 1–9 and A–G")]
 		var card := PanelContainer.new()
 		card.theme_type_variation = "DifficultyCard"
 		card.custom_minimum_size.y = 176 if wide else 150
@@ -938,6 +1027,11 @@ func _build_board(side: float) -> CenterContainer:
 	overlay_margin.add_theme_constant_override("margin_top", 0)
 	overlay_margin.add_theme_constant_override("margin_bottom", 0)
 	overlay_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pause_backbuffer = BackBufferCopy.new()
+	pause_backbuffer.name = "PauseBackBuffer"
+	pause_backbuffer.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	pause_backbuffer.visible = false
+	panel.add_child(pause_backbuffer)
 	panel.add_child(overlay_margin)
 	pause_overlay = PanelContainer.new()
 	pause_overlay.theme_type_variation = "PauseBoardOverlay"
@@ -952,8 +1046,8 @@ func _build_board(side: float) -> CenterContainer:
 	blur_shader.code = PAUSE_BLUR_SHADER_CODE
 	var blur_material := ShaderMaterial.new()
 	blur_material.shader = blur_shader
-	blur_material.set_shader_parameter("blur_lod", 5.8)
-	blur_material.set_shader_parameter("tint_color", Color(theme.get_color("surface", "App"), 0.40))
+	blur_material.set_shader_parameter("blur_lod", 6.2)
+	blur_material.set_shader_parameter("tint_color", Color(theme.get_color("surface", "App"), 0.38))
 	pause_blur_layer.material = blur_material
 	pause_overlay.add_child(pause_blur_layer)
 	var pause_center := CenterContainer.new()
@@ -1103,6 +1197,7 @@ func _refresh_game() -> void:
 		elif danger:
 			indicator_color = Color("ff453a")
 		mistakes_label.add_theme_color_override("font_color", indicator_color if ranked and mistake_count > 0 else (Color("ff453a") if danger else theme.get_color("text", "App")))
+		var new_mistake := _last_mistake_count >= 0 and mistake_count > _last_mistake_count
 		if mistake_icon != null:
 			mistake_icon.visible = ranked or show_mistakes
 			mistake_icon.texture = ICONS["warning"] if mistake_count >= 2 else ICONS["error"]
@@ -1110,6 +1205,11 @@ func _refresh_game() -> void:
 			if mistake_count > _last_mistake_count and mistake_count in [1, 2, 3]:
 				mistake_icon.scale = Vector2(0.78, 0.78)
 				create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(mistake_icon, "scale", Vector2.ONE, 0.28)
+		if new_mistake:
+			var mistake_message := _l("错误！当前数字不正确", "Mistake! That number is not correct")
+			if ranked:
+				mistake_message = _l("错误！已记录第 %d 次，共 3 次", "Mistake %d of 3 recorded") % mistake_count
+			_show_toast(mistake_message, true)
 		_last_mistake_count = mistake_count
 	if notes_button != null:
 		notes_button.text = _l("草稿", "Notes")
@@ -1120,6 +1220,8 @@ func _refresh_game() -> void:
 		pause_button.icon = ICONS["play"] if game_service.paused else ICONS["pause"]
 	if pause_overlay != null:
 		pause_overlay.visible = game_service.paused
+	if pause_backbuffer != null:
+		pause_backbuffer.visible = game_service.paused
 
 func _update_completed_unit_animations() -> void:
 	if game_service.session == null or game_service.session.mode != "local":
@@ -1553,11 +1655,20 @@ func _show_settings() -> void:
 	var wide := _is_wide_layout()
 	var settings_scroll := _page_scroll()
 	content.add_child(settings_scroll)
+	var settings_inset := MarginContainer.new()
+	settings_inset.name = "SettingsScrollInset"
+	var edge_inset := 12 if wide else 8
+	settings_inset.add_theme_constant_override("margin_left", edge_inset)
+	settings_inset.add_theme_constant_override("margin_right", edge_inset)
+	settings_inset.add_theme_constant_override("margin_top", 4)
+	settings_inset.add_theme_constant_override("margin_bottom", 8)
+	settings_inset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_scroll.add_child(settings_inset)
 	var settings_body := VBoxContainer.new()
 	settings_body.add_theme_constant_override("separation", 24 if wide else 14)
 	settings_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	settings_scroll.add_child(settings_body)
+	settings_inset.add_child(settings_body)
 	var overview: Container = HBoxContainer.new() if wide else VBoxContainer.new()
 	overview.add_theme_constant_override("separation", 36 if wide else 14)
 	overview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1621,7 +1732,7 @@ func _show_settings() -> void:
 	leaderboard_settings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preferences_column.add_child(leaderboard_settings)
 	_add_setting_toggle(leaderboard_settings, "leaderboard_auto_refresh", _l("进入排行榜后自动刷新", "Refresh automatically when opening leaderboard"), wide)
-	_add_setting_toggle(leaderboard_settings, "ranked_auto_upload", _l("自动上传所有排位完成成绩", "Automatically upload every completed ranked game"), wide)
+	_add_setting_toggle(leaderboard_settings, "ranked_auto_upload", _l("自动上传所有排位挑战成绩", "Automatically upload every completed ranked game"), wide)
 	var leaderboard_note := Label.new()
 	leaderboard_note.text = _l("自动上传默认关闭。关闭时每局完成后可选择是否上传；离线选择上传的成绩会保存在本机，下次联网刷新排行榜时先上传再更新排名。", "Automatic upload is off by default. When off, each completed game asks whether to upload. Offline uploads remain on this device and are sent before the leaderboard refreshes next time you are online.")
 	leaderboard_note.theme_type_variation = "SettingsNote"
@@ -1984,10 +2095,25 @@ func _discard_failed_uploads() -> void:
 func _build_shell_labels() -> void:
 	if shell_outer == null:
 		return
-	var top := shell_outer.get_child(0)
-	if top is HBoxContainer and top.get_child_count() > 0:
-		(top.get_child(0) as Label).text = _l("SUDOKU / 数独", "SUDOKU")
+	if brand_label != null:
+		brand_label.text = "SUDOKU"
 	_on_network_changed(NetworkManager.online)
+
+func _set_connection_status(_online: bool, _pending_count: int = 0) -> void:
+	if status_label == null or status_pill == null:
+		return
+	var network_allowed := bool(AppState.settings.get("leaderboard_network_allowed", false))
+	status_pill.visible = true
+	if network_allowed:
+		status_label.text = _l("●  在线", "●  Online")
+		status_pill.theme_type_variation = "TopBarOnlineStatusPill"
+		status_label.theme_type_variation = "TopBarOnlineStatus"
+		status_pill.tooltip_text = _l("已授予排行榜联网权限", "Leaderboard network permission granted")
+	else:
+		status_label.text = _l("○  离线", "○  Offline")
+		status_pill.theme_type_variation = "TopBarOfflineStatusPill"
+		status_label.theme_type_variation = "TopBarOfflineStatus"
+		status_pill.tooltip_text = _l("未授予排行榜联网权限", "Leaderboard network permission not granted")
 
 func _add_choice_picker(parent: Container, labels: Array, values: Array, selected: String, callback: Callable) -> void:
 	var selected_index := maxi(0, values.find(selected))
@@ -2142,12 +2268,12 @@ func _navigate(destination: String) -> void:
 		_show_menu()
 
 func _on_network_changed(online: bool) -> void:
-	status_label.text = _l("在线", "Online") if online else _l("离线可玩", "Works offline")
+	_set_connection_status(online, SyncManager.queue.size())
 
 func _on_pending_changed(count: int) -> void:
-	status_label.text = (_l("在线", "Online") if NetworkManager.online else _l("离线", "Offline")) + (_l(" · 待传 %d", " · %d pending") % count if count > 0 else "")
+	_set_connection_status(NetworkManager.online, count)
 
-func _show_toast(message: String) -> void:
+func _show_toast(message: String, is_error: bool = false) -> void:
 	if toast_label == null or toast_panel == null:
 		return
 	_toast_token += 1
@@ -2165,10 +2291,12 @@ func _show_toast(message: String) -> void:
 		"服务器返回了无法识别的数据": _l("服务器返回了无法识别的数据", "The server returned unrecognized data."),
 		"在线服务尚未配置": _l("在线服务尚未配置", "Online services are not configured yet.")
 	}.get(message, message)
-	toast_label.text = translated
+	toast_panel.theme_type_variation = "ErrorToastPanel" if is_error else "ToastPanel"
+	toast_label.theme_type_variation = "ErrorToastLabel" if is_error else "ToastLabel"
+	toast_label.text = ("⚠  " + translated) if is_error and not translated.is_empty() else translated
 	toast_panel.visible = not translated.is_empty()
 	if not translated.is_empty():
-		get_tree().create_timer(3.2).timeout.connect(_dismiss_toast.bind(_toast_token))
+		get_tree().create_timer(3.8 if is_error else 3.2).timeout.connect(_dismiss_toast.bind(_toast_token))
 
 func _dismiss_toast(token: int) -> void:
 	if token == _toast_token and toast_panel != null:
@@ -2177,21 +2305,24 @@ func _dismiss_toast(token: int) -> void:
 
 func _add_back_header(title_text: String, subtitle: String) -> void:
 	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.custom_minimum_size.y = 66
 	content.add_child(row)
 	var back := _icon_button("", "back", _l("返回", "Back"))
 	back.custom_minimum_size = Vector2(54, 54)
 	back.pressed.connect(_on_back)
 	row.add_child(back)
 	var labels := VBoxContainer.new()
+	labels.add_theme_constant_override("separation", 2)
 	labels.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(labels)
 	var title := Label.new()
 	title.text = title_text
-	title.add_theme_font_size_override("font_size", 30)
+	title.theme_type_variation = "PageHeaderTitle"
 	labels.add_child(title)
 	var sub := Label.new()
 	sub.text = subtitle
-	sub.add_theme_font_size_override("font_size", 15)
+	sub.theme_type_variation = "PageHeaderSubtitle"
 	labels.add_child(sub)
 
 func _add_heading(title_text: String, subtitle: String, kicker_text: String = "", target_parent: Container = null) -> void:
@@ -2209,7 +2340,7 @@ func _add_heading(title_text: String, subtitle: String, kicker_text: String = ""
 	var title := Label.new()
 	title.text = title_text
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 50)
+	title.theme_type_variation = "HeroTitle"
 	parent.add_child(title)
 	var sub := Label.new()
 	sub.text = subtitle
@@ -2450,29 +2581,38 @@ func _play_selection_sound() -> void:
 func _add_custom_sound_settings(parent: Container, wide: bool) -> void:
 	_add_section_title(parent, _l("自定义音效", "Custom Sounds"))
 	var disclosure := _icon_button(
-		_l("收起音效自定义", "Hide sound customization") if _sound_customization_expanded else _l("配置按键音与错误提示音", "Configure button and mistake sounds"),
+		_l("按键音与错误提示音", "Button & mistake sounds"),
 		"chevron",
-		_l("展开二级音效设置", "Open secondary sound settings")
+		_sound_customization_tooltip()
 	)
 	disclosure.name = "CustomSoundsDisclosure"
 	disclosure.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	disclosure.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	disclosure.pressed.connect(_toggle_sound_customization)
 	parent.add_child(disclosure)
-	if not _sound_customization_expanded:
-		var summary := Label.new()
-		summary.text = _l("两类音效默认采用系统风格，也可分别导入 MP3、WAV 或 OGG。", "Both sounds use system-style defaults and can be replaced separately with MP3, WAV or OGG.")
-		summary.theme_type_variation = "SettingsNote"
-		summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		parent.add_child(summary)
-		return
+	var summary := Label.new()
+	summary.name = "CustomSoundsSummary"
+	summary.text = _l("两类音效默认采用系统风格，也可分别导入 MP3、WAV 或 OGG。", "Both sounds use system-style defaults and can be replaced separately with MP3, WAV or OGG.")
+	summary.theme_type_variation = "SettingsNote"
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.visible = not _sound_customization_expanded
+	parent.add_child(summary)
 	var secondary := VBoxContainer.new()
 	secondary.name = "CustomSoundsSecondaryMenu"
 	secondary.add_theme_constant_override("separation", 12)
 	secondary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	parent.add_child(secondary)
+	secondary.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	var secondary_host := Control.new()
+	secondary_host.name = "CustomSoundsSecondaryHost"
+	secondary_host.clip_contents = true
+	secondary_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	secondary_host.custom_minimum_size.y = 0.0
+	parent.add_child(secondary_host)
+	secondary_host.add_child(secondary)
 	_add_custom_sound_slot(secondary, "button", _l("按键与落子音", "Button & entry sound"), wide)
 	_add_custom_sound_slot(secondary, "error", _l("错误提示音", "Mistake sound"), wide)
+	if _sound_customization_expanded:
+		secondary_host.custom_minimum_size.y = secondary.get_combined_minimum_size().y
 
 func _add_custom_sound_slot(parent: Container, kind: String, title_text: String, wide: bool) -> void:
 	var card := PanelContainer.new()
@@ -2505,14 +2645,17 @@ func _add_custom_sound_slot(parent: Container, kind: String, title_text: String,
 	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_child(actions)
 	var choose := _button(_l("选择音频文件", "Choose audio file"))
+	choose.theme_type_variation = "SoundActionButton"
 	choose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	choose.pressed.connect(_choose_custom_sound.bind(kind))
 	actions.add_child(choose)
 	var preview := _icon_button(_l("试听", "Preview"), "play")
+	preview.theme_type_variation = "SoundActionButton"
 	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview.pressed.connect(_preview_custom_sound.bind(kind))
 	actions.add_child(preview)
 	var reset := _button(_l("恢复默认", "Use default"))
+	reset.theme_type_variation = "SoundActionButton"
 	reset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	reset.disabled = custom_name.is_empty()
 	reset.pressed.connect(_reset_custom_sound.bind(kind))
@@ -2520,7 +2663,44 @@ func _add_custom_sound_slot(parent: Container, kind: String, title_text: String,
 
 func _toggle_sound_customization() -> void:
 	_sound_customization_expanded = not _sound_customization_expanded
-	_show_settings()
+	var summary := content.find_child("CustomSoundsSummary", true, false) as Control
+	var secondary := content.find_child("CustomSoundsSecondaryMenu", true, false) as Control
+	var secondary_host := content.find_child("CustomSoundsSecondaryHost", true, false) as Control
+	var disclosure := content.find_child("CustomSoundsDisclosure", true, false) as Button
+	if disclosure != null:
+		disclosure.tooltip_text = _sound_customization_tooltip()
+	if summary == null or secondary == null or secondary_host == null:
+		return
+	if _sound_customization_tween != null and _sound_customization_tween.is_valid():
+		_sound_customization_tween.kill()
+	var target_height := secondary.get_combined_minimum_size().y
+	_sound_customization_tween = create_tween()
+	_sound_customization_tween.set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	if _sound_customization_expanded:
+		summary.visible = false
+		secondary_host.visible = true
+		secondary.visible = true
+		secondary_host.custom_minimum_size = Vector2(0, 0)
+		secondary.modulate = Color(1, 1, 1, 0)
+		secondary.scale = Vector2(1, 0.96)
+		_sound_customization_tween.set_parallel(true)
+		_sound_customization_tween.tween_property(secondary_host, "custom_minimum_size", Vector2(0, target_height), 0.22)
+		_sound_customization_tween.tween_property(secondary, "modulate:a", 1.0, 0.16)
+		_sound_customization_tween.tween_property(secondary, "scale", Vector2.ONE, 0.22)
+	else:
+		secondary_host.custom_minimum_size = Vector2(0, maxf(secondary_host.size.y, target_height))
+		_sound_customization_tween.set_parallel(true)
+		_sound_customization_tween.tween_property(secondary_host, "custom_minimum_size", Vector2(0, 0), 0.18)
+		_sound_customization_tween.tween_property(secondary, "modulate:a", 0.0, 0.12)
+		_sound_customization_tween.tween_property(secondary, "scale", Vector2(1, 0.96), 0.18)
+		_sound_customization_tween.chain().tween_callback(func() -> void:
+			secondary.visible = false
+			secondary_host.visible = false
+			summary.visible = true
+		)
+
+func _sound_customization_tooltip() -> String:
+	return _l("收起二级音效设置", "Close secondary sound settings") if _sound_customization_expanded else _l("展开二级音效设置", "Open secondary sound settings")
 
 func _custom_sound_path_key(kind: String) -> String:
 	return "custom_error_sound_path" if kind == "error" else "custom_ui_sound_path"
@@ -2636,6 +2816,7 @@ func _clear_content() -> void:
 	pause_button = null
 	pause_overlay = null
 	pause_blur_layer = null
+	pause_backbuffer = null
 	_leaderboard_results = null
 	mistake_icon = null
 	_last_mistake_count = -1

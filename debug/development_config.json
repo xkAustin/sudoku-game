@@ -1,0 +1,9 @@
+{
+  "default_difficulty": 1,
+  "test_seed": 20260803,
+  "test_elapsed_ms": 95000,
+  "test_mistakes": 0,
+  "mock_player_count": 12,
+  "panel_refresh_seconds": 0.5,
+  "log_output": true
+}

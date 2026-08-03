@@ -19,7 +19,7 @@ export function env(name: string): string {
   return value;
 }
 
-export async function serviceRequest(path: string, init: RequestInit = {}): Promise<Response> {
+export function serviceRequest(path: string, init: RequestInit = {}): Promise<Response> {
   const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${serviceKey}`);

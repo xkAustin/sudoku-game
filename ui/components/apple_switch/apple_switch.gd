@@ -40,19 +40,31 @@ func _draw() -> void:
 	var track_position := Vector2((size.x - track_size.x) * 0.5, (size.y - track_size.y) * 0.5)
 	var accent := get_theme_color("accent", "App")
 	var background := get_theme_color("background", "App")
-	var off_color := Color("636366") if background.get_luminance() < 0.5 else Color("d1d1d6")
+	var glass_edge := get_theme_color("glass_edge", "App")
+	var off_color := Color(0.28, 0.36, 0.48, 0.72) if background.get_luminance() < 0.5 else Color(0.78, 0.86, 0.94, 0.72)
 	var track_color := off_color.lerp(accent, _progress)
 	var track := StyleBoxFlat.new()
 	track.bg_color = track_color
+	track.border_color = glass_edge.lerp(accent.lightened(0.18), _progress)
+	track.set_border_width_all(1)
 	track.set_corner_radius_all(19)
+	track.anti_aliasing = true
 	if has_focus():
 		track.border_color = accent.lightened(0.18)
 		track.set_border_width_all(2)
 	draw_style_box(track, Rect2(track_position, track_size))
+	draw_line(
+		track_position + Vector2(12, 5),
+		track_position + Vector2(track_size.x - 12, 5),
+		Color(1, 1, 1, 0.26),
+		1.2,
+		true
+	)
 	var knob_x := lerpf(track_position.x + 19.0, track_position.x + track_size.x - 19.0, _progress)
 	var knob_center := Vector2(knob_x, track_position.y + track_size.y * 0.5)
-	draw_circle(knob_center + Vector2(0, 1.2), 15.2, Color(0, 0, 0, 0.22))
-	draw_circle(knob_center, 15.0, Color.WHITE)
+	draw_circle(knob_center + Vector2(0, 1.8), 15.8, Color(0, 0.04, 0.12, 0.26))
+	draw_circle(knob_center, 15.0, Color(0.98, 1.0, 1.0, 0.96))
+	draw_circle(knob_center - Vector2(3.6, 4.0), 4.6, Color(1, 1, 1, 0.44))
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_THEME_CHANGED or what == NOTIFICATION_RESIZED or what == NOTIFICATION_FOCUS_ENTER or what == NOTIFICATION_FOCUS_EXIT:

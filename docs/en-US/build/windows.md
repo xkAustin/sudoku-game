@@ -11,14 +11,14 @@ Install Godot and matching templates. Final QA requires Windows 10 or 11.
 
 ## Configuration
 
-Preset: `Windows Desktop`; architecture: x86_64; package identifier:
+Preset: `Windows`; architecture: x86_64; package identifier:
 `io.github.xkaustin.sudokugame`.
 
 ## Build Command
 
 ```sh
-godot --headless --path . --export-debug "Windows Desktop" build/windows/SudokuGame.exe
-godot --headless --path . --export-release "Windows Desktop" build/windows/SudokuGame.exe
+godot --headless --path . --export-debug "Windows" build/windows/SudokuGame.exe
+godot --headless --path . --export-release "Windows" build/windows/SudokuGame.exe
 ```
 
 ## Output Location

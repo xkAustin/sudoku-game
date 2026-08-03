@@ -24,6 +24,10 @@ Install Godot 4.7.1 and its matching export templates, then run:
 godot --path .
 ```
 
+Debug runs open the development launcher; press `F12` for the runtime Debug
+panel. See the [Development Mode Guide](DEVELOPMENT_GUIDE.md) for live config
+reload, direct settings/leaderboard/test-board entry and release isolation.
+
 For the leaderboard, copy `config/client.env.example` to the ignored
 `config/client.env`, add only the project URL and publishable key, and deploy
 the migration first.
@@ -35,6 +39,7 @@ branch.
 Full documentation:
 
 - [Build overview](BUILD_GUIDE.md)
+- [Development Mode](DEVELOPMENT_GUIDE.md)
 - [Release deployment](DEPLOYMENT_GUIDE.md)
 - [Supabase](SUPABASE_GUIDE.md)
 - [Security](SECURITY_GUIDE.md)

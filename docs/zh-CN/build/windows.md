@@ -10,14 +10,14 @@ Godot 4.7.1、Windows x86_64 导出模板；正式发布可准备 Authenticode �
 
 ## Configuration
 
-预设：`Windows Desktop`；架构：x86_64；包名：
+预设：`Windows`；架构：x86_64；包名：
 `io.github.xkaustin.sudokugame`。
 
 ## Build Command
 
 ```sh
-godot --headless --path . --export-debug "Windows Desktop" build/windows/SudokuGame.exe
-godot --headless --path . --export-release "Windows Desktop" build/windows/SudokuGame.exe
+godot --headless --path . --export-debug "Windows" build/windows/SudokuGame.exe
+godot --headless --path . --export-release "Windows" build/windows/SudokuGame.exe
 ```
 
 ## Output Location

@@ -40,15 +40,46 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	var app_state := root.get_node("AppState")
+	app_state.settings["leaderboard_network_allowed"] = false
+	main._build_shell_labels()
 	main._show_settings()
 	await process_frame
 	if not main.ui_sounds.is_ready_to_play():
 		push_error("UI smoke: generated UI audio streams are not ready")
 		quit(1)
 		return
+	var default_glass := main.theme.get_stylebox("panel", "PanelContainer") as StyleBoxFlat
+	var top_bar := main.find_child("TopBarGlass", true, false) as PanelContainer
+	var top_bar_style := main.theme.get_stylebox("panel", "TopBarGlass") as StyleBoxFlat
+	var status_pill := main.find_child("TopBarStatusPill", true, false) as PanelContainer
+	if main.background_layer == null or not main.background_layer.material is ShaderMaterial \
+			or default_glass == null or default_glass.bg_color.a >= 0.95 \
+			or default_glass.border_color.a <= 0.20 or default_glass.shadow_size != 0 \
+			or top_bar == null or top_bar_style == null or top_bar_style.bg_color.a < 0.90 \
+			or status_pill == null or not status_pill.visible \
+			or status_pill.theme_type_variation != "TopBarOfflineStatusPill":
+		push_error("UI smoke: Liquid Glass background and translucent surface hierarchy are missing")
+		quit(1)
+		return
+	app_state.settings["leaderboard_network_allowed"] = true
+	main._build_shell_labels()
+	if status_pill.theme_type_variation != "TopBarOnlineStatusPill":
+		push_error("UI smoke: granting leaderboard network permission must show online status")
+		quit(1)
+		return
+	app_state.settings["leaderboard_network_allowed"] = false
+	main._build_shell_labels()
+	var settings_row_style := main.theme.get_stylebox("panel", "SettingsRow") as StyleBoxFlat
+	var settings_inset := main.find_child("SettingsScrollInset", true, false) as MarginContainer
+	if settings_row_style == null or settings_row_style.corner_radius_top_left != 20 \
+			or settings_row_style.shadow_size != 0 or settings_inset == null \
+			or settings_inset.get_theme_constant("margin_left") < 8:
+		push_error("UI smoke: settings rows need aligned rounded shadows and scroll-safe edge insets")
+		quit(1)
+		return
 	var tooltip_style := main.theme.get_stylebox("panel", "TooltipPanel") as StyleBoxFlat
-	if tooltip_style == null or tooltip_style.corner_radius_top_left != 14 or tooltip_style.shadow_size != 12:
-		push_error("UI smoke: Apple-style tooltip theme is missing")
+	if tooltip_style == null or tooltip_style.corner_radius_top_left != 14 or tooltip_style.shadow_size != 0:
+		push_error("UI smoke: Liquid Glass surfaces must preserve rounded outlines without external shadows")
 		quit(1)
 		return
 	var scroll_grabber := main.theme.get_stylebox("grabber", "VScrollBar") as StyleBoxFlat
@@ -80,7 +111,7 @@ func _run() -> void:
 		quit(1)
 		return
 	var ranked_upload_setting_labels: Array[Node] = main.content.find_children("*", "Label", true, false).filter(
-		func(node: Node) -> bool: return (node as Label).text in ["自动上传所有排位完成成绩", "Automatically upload every completed ranked game"]
+		func(node: Node) -> bool: return (node as Label).text in ["自动上传所有排位挑战成绩", "Automatically upload every completed ranked game"]
 	)
 	if ranked_upload_setting_labels.size() != 1:
 		push_error("UI smoke: ranked automatic-upload setting is missing")
@@ -93,6 +124,14 @@ func _run() -> void:
 		push_error("UI smoke: interface scale setting is missing")
 		quit(1)
 		return
+	main._set_ui_scale_value("1.1")
+	await process_frame
+	if not is_equal_approx(main.theme.default_base_scale, 1.1) or main.content.scale != Vector2.ONE:
+		push_error("UI smoke: interface scale must affect Theme layout metrics, not only content painting")
+		quit(1)
+		return
+	main._set_ui_scale_value("1.0")
+	await process_frame
 	if not main._is_mobile_device("Android") or not main._is_mobile_device("iOS") or main._is_mobile_device("macOS"):
 		push_error("UI smoke: mobile-only controls do not use platform detection")
 		quit(1)
@@ -113,10 +152,27 @@ func _run() -> void:
 		push_error("UI smoke: first-level custom sound settings or format validation is missing")
 		quit(1)
 		return
+	var settings_page: Node = main.content.get_child(0)
+	var disclosure_title := sound_disclosure.text
 	main._toggle_sound_customization()
 	await process_frame
-	if main.content.find_child("CustomSoundsSecondaryMenu", true, false) == null:
-		push_error("UI smoke: button and mistake sounds should live in an expandable secondary menu")
+	var sound_summary := main.content.find_child("CustomSoundsSummary", true, false) as Control
+	var secondary_sound_menu := main.content.find_child("CustomSoundsSecondaryMenu", true, false) as Control
+	var secondary_sound_host := main.content.find_child("CustomSoundsSecondaryHost", true, false) as Control
+	if secondary_sound_menu == null or not secondary_sound_menu.visible or secondary_sound_host == null \
+			or secondary_sound_host.custom_minimum_size.y <= 0.0 or sound_summary == null or sound_summary.visible:
+		push_error("UI smoke: button and mistake sounds should open in a secondary menu")
+		quit(1)
+		return
+	if main.content.get_child(0) != settings_page or main.content.find_child("CustomSoundsDisclosure", true, false) != sound_disclosure \
+			or sound_disclosure.text != disclosure_title:
+		push_error("UI smoke: custom sound disclosure should not rebuild the settings page or replace its title")
+		quit(1)
+		return
+	main._toggle_sound_customization()
+	await create_timer(0.25).timeout
+	if secondary_sound_menu.visible or secondary_sound_host.visible or not sound_summary.visible or sound_disclosure.text != disclosure_title:
+		push_error("UI smoke: closing custom sounds should retain the secondary title")
 		quit(1)
 		return
 	var custom_audio_test_path := "/tmp/sudoku-ui-smoke-custom"
@@ -366,6 +422,16 @@ func _run() -> void:
 		return
 	app_state.settings["auto_check"] = true
 	main.game_service.erase()
+	var checked_mistakes: int = int(main.game_service.session.mistakes)
+	main.game_service.enter_number(5)
+	await process_frame
+	if main.game_service.session.mistakes != checked_mistakes + 1 or not main.toast_panel.visible \
+			or main.toast_panel.theme_type_variation != "ErrorToastPanel" \
+			or not main.toast_label.text.contains("Mistake") or not feedback_manager.is_error_player_active():
+		push_error("UI smoke: an incorrect entry should show a prominent error prompt and play mistake audio")
+		quit(1)
+		return
+	main.game_service.erase()
 	main.game_service.select(10)
 	var right_event := InputEventKey.new()
 	right_event.keycode = KEY_RIGHT
@@ -383,7 +449,8 @@ func _run() -> void:
 		return
 	main._toggle_pause()
 	await process_frame
-	if main.pause_overlay == null or not main.pause_overlay.visible or not main.cell_buttons[0].disabled:
+	if main.pause_overlay == null or not main.pause_overlay.visible or main.pause_backbuffer == null \
+			or not main.pause_backbuffer.visible or not main.cell_buttons[0].disabled:
 		push_error("UI smoke: pause overlay is not covering and disabling the board")
 		quit(1)
 		return
@@ -595,6 +662,16 @@ func _run() -> void:
 	await process_frame
 	if main.cell_buttons.size() != 256:
 		push_error("UI smoke: expected 256 hexadoku cells")
+		quit(1)
+		return
+	var ultimate_digit: SudokuCellButton
+	for cell in main.cell_buttons:
+		if cell.cell_value > 0:
+			ultimate_digit = cell
+			break
+	if ultimate_digit == null or ultimate_digit.get_theme_font_size("font_size") < 21 \
+			or ultimate_digit.get_theme_constant("outline_size") < 1:
+		push_error("UI smoke: Ultimate mode digits should be larger and outlined for clarity")
 		quit(1)
 		return
 	if main.notes_button == null or main.pause_button == null:

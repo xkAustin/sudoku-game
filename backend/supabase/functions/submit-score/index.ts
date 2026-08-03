@@ -124,6 +124,7 @@ function validateShape(body: Submission): Response | null {
     if (clueCount < 16 || clueCount >= body.puzzle.length) return error("INVALID_PUZZLE", "The offline puzzle has an invalid clue count.");
   }
   const name = normalizeName(body.display_name ?? "");
+  // deno-lint-ignore no-control-regex -- Rejecting ASCII control characters is intentional input validation.
   if (name.length < 1 || Array.from(name).length > 20 || /[\u0000-\u001f\u007f]/.test(name)) return error("INVALID_NAME", "The display name is invalid.");
   if (!Number.isInteger(body.duration_ms) || body.duration_ms < 10_000 || body.duration_ms > 86_400_000) return error("INVALID_DURATION", "The completion time is invalid.");
   if (!Number.isInteger(body.mistakes) || body.mistakes < 0 || body.mistakes > 999 || body.hints_used !== 0) return error("INVALID_SCORE", "Ranked scores cannot include hints.");

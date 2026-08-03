@@ -7,6 +7,10 @@ const API_VERSION := "v1"
 const ALGORITHM_VERSION := 1
 const LOCAL_CLIENT_CONFIG := "res://config/client.env"
 
+# Debug 专用：编辑器运行和 Debug 导出为 true，Release 导出会由 Godot 自动设为 false。
+var DEBUG: bool = OS.is_debug_build()
+var development_mode: bool = DEBUG and not OS.get_cmdline_user_args().has("--no-development-mode")
+
 # Public client configuration only. Values are loaded from the ignored local
 # config file or process environment and are never committed to source control.
 var supabase_url: String = ""
@@ -25,6 +29,11 @@ func _ready() -> void:
 
 func online_configured() -> bool:
 	return supabase_project_url().begins_with("https://") and not supabase_anon_key.is_empty()
+
+func debug_log(message: String) -> void:
+	# Debug 专用：正式发布构建不会输出开发日志。
+	if development_mode:
+		print("[Development] " + message)
 
 func supabase_project_url() -> String:
 	var value := supabase_url.strip_edges().trim_suffix("/")

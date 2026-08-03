@@ -18,21 +18,22 @@ The release identity is:
 
 ## Current verification status
 
-The current working tree was exported with Godot 4.7.1 on 2026-07-26 into the
-ignored `build/verification-20260726/` directory:
+The current working tree was exported with Godot 4.7.1 on 2026-08-03 into the
+ignored `build/` directory:
 
 | Platform | Result on this host |
 |---|---|
-| Android | ARM64 debug APK exported; v2/v3 debug signature verified |
-| iOS | Unsigned Xcode project exported from a temporary preset with `CIUNSIGNED`; no IPA |
-| macOS | Universal debug app exported, ad-hoc signature verified, application binary launched successfully |
-| Windows | x86_64 debug EXE and PCK exported; not runnable on this macOS host |
-| Linux | x86_64 debug ELF and PCK exported; not runnable on this macOS host |
+| Android | ARM64 debug APK exported; v2/v3 debug signature verified; no connected device |
+| iOS | Unsigned Xcode project exported with temporary `CIUNSIGNED`; Xcode project inspection passed, but iOS 26.5 platform is not installed, so no app/IPA was built |
+| macOS | Universal debug and release apps exported, ad-hoc signatures verified, and both binaries launched successfully; the release log contained no Development Mode output |
+| Windows | x86_64 debug EXE and PCK exported and PE structure verified; not runnable on this macOS host |
+| Linux | x86_64 debug ELF and PCK exported and ELF structure verified; not runnable on this macOS host |
 
 The shared UI suite passed menu, generation, input, completion, ranked upload
-choice and cached leaderboard display. Real Supabase submit/read passed both
-anonymous REST and the Godot client. These shared checks do not replace
-platform-native device QA.
+choice and cached leaderboard display. The GDScript suite reported 85
+assertions and zero failures, the Development Mode smoke suite reported zero
+failures, and the local Deno backend suite passed. These checks do not replace
+platform-native device QA or confirm the deployed Supabase schema.
 
 The app is offline-first. Online ranking support remains disabled until
 `config/client.env` contains the two public client values and the SQL migration
@@ -73,7 +74,7 @@ Requirements:
 Export:
 
 ```sh
-godot --headless --path . --export-release "Windows Desktop" build/windows/SudokuGame.exe
+godot --headless --path . --export-release "Windows" build/windows/SudokuGame.exe
 ```
 
 The preset exports x86_64 with the Compatibility renderer. Test window resizing,
