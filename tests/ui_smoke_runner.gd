@@ -51,12 +51,14 @@ func _run() -> void:
 	var default_glass := main.theme.get_stylebox("panel", "PanelContainer") as StyleBoxFlat
 	var top_bar := main.find_child("TopBarGlass", true, false) as PanelContainer
 	var top_bar_style := main.theme.get_stylebox("panel", "TopBarGlass") as StyleBoxFlat
+	var brand_pill := main.find_child("TopBarBrandPill", true, false) as PanelContainer
 	var status_pill := main.find_child("TopBarStatusPill", true, false) as PanelContainer
 	if main.background_layer == null or not main.background_layer.material is ShaderMaterial \
 			or default_glass == null or default_glass.bg_color.a >= 0.95 \
 			or default_glass.border_color.a <= 0.20 or default_glass.shadow_size != 0 \
 			or top_bar == null or top_bar_style == null or top_bar_style.bg_color.a < 0.90 \
-			or status_pill == null or not status_pill.visible \
+			or brand_pill == null or status_pill == null or not status_pill.visible \
+			or brand_pill.custom_minimum_size.x != status_pill.custom_minimum_size.x \
 			or status_pill.theme_type_variation != "TopBarOfflineStatusPill":
 		push_error("UI smoke: Liquid Glass background and translucent surface hierarchy are missing")
 		quit(1)
@@ -427,6 +429,7 @@ func _run() -> void:
 	await process_frame
 	if main.game_service.session.mistakes != checked_mistakes + 1 or not main.toast_panel.visible \
 			or main.toast_panel.theme_type_variation != "ErrorToastPanel" \
+			or main.toast_panel.anchor_top != 0.0 or main.toast_label.get_theme_font_size("font_size") < 26 \
 			or not main.toast_label.text.contains("Mistake") or not feedback_manager.is_error_player_active():
 		push_error("UI smoke: an incorrect entry should show a prominent error prompt and play mistake audio")
 		quit(1)
@@ -450,17 +453,21 @@ func _run() -> void:
 	main._toggle_pause()
 	await process_frame
 	if main.pause_overlay == null or not main.pause_overlay.visible or main.pause_backbuffer == null \
-			or not main.pause_backbuffer.visible or not main.cell_buttons[0].disabled:
+			or not main.pause_backbuffer.visible or not main.cell_buttons[0].disabled \
+			or not main.pause_blur_layer.material is ShaderMaterial \
+			or float((main.pause_blur_layer.material as ShaderMaterial).get_shader_parameter("blur_radius")) < 5.0:
 		push_error("UI smoke: pause overlay is not covering and disabling the board")
 		quit(1)
 		return
-	if main.pause_blur_layer == null or not main.pause_blur_layer.material is ShaderMaterial or not (main.pause_blur_layer.material as ShaderMaterial).shader.code.contains("textureLod"):
+	if main.pause_blur_layer == null or not main.pause_blur_layer.material is ShaderMaterial \
+			or not (main.pause_blur_layer.material as ShaderMaterial).shader.code.contains("SCREEN_PIXEL_SIZE") \
+			or not (main.pause_blur_layer.material as ShaderMaterial).shader.code.contains("texture(screen_texture"):
 		push_error("UI smoke: pause overlay should include a real screen-texture blur shader")
 		quit(1)
 		return
 	var pause_material := main.pause_blur_layer.material as ShaderMaterial
 	var pause_tint: Color = pause_material.get_shader_parameter("tint_color")
-	if float(pause_material.get_shader_parameter("blur_lod")) < 5.5 or pause_tint.a < 0.35:
+	if float(pause_material.get_shader_parameter("blur_radius")) < 5.0 or pause_tint.a < 0.30:
 		push_error("UI smoke: paused cells should be strongly blurred and obscured")
 		quit(1)
 		return
@@ -669,8 +676,8 @@ func _run() -> void:
 		if cell.cell_value > 0:
 			ultimate_digit = cell
 			break
-	if ultimate_digit == null or ultimate_digit.get_theme_font_size("font_size") < 21 \
-			or ultimate_digit.get_theme_constant("outline_size") < 1:
+	if ultimate_digit == null or ultimate_digit.get_theme_font_size("font_size") < 24 \
+			or ultimate_digit.get_theme_constant("outline_size") < 2:
 		push_error("UI smoke: Ultimate mode digits should be larger and outlined for clarity")
 		quit(1)
 		return

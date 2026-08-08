@@ -11,16 +11,29 @@ const RuntimeAudioLoaderScript := preload("res://ui/audio/runtime_audio_loader.g
 const PAUSE_BLUR_SHADER_CODE := """
 shader_type canvas_item;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
-uniform float blur_lod = 5.8;
+uniform float blur_radius = 5.0;
 uniform vec4 tint_color : source_color = vec4(0.95, 0.97, 1.0, 0.38);
-uniform float refraction_strength = 0.0024;
+uniform float refraction_strength = 0.0007;
 
 void fragment() {
 	vec2 liquid_offset = vec2(
 		sin(UV.y * 18.0 + UV.x * 5.0),
 		cos(UV.x * 17.0 - UV.y * 4.0)
 	) * refraction_strength;
-	vec4 blurred = textureLod(screen_texture, SCREEN_UV + liquid_offset, blur_lod);
+	vec2 source_uv = SCREEN_UV + liquid_offset;
+	vec2 radius = SCREEN_PIXEL_SIZE * blur_radius;
+	vec4 blurred = vec4(0.0);
+	float total_weight = 0.0;
+	for (int x = -2; x <= 2; x++) {
+		for (int y = -2; y <= 2; y++) {
+			vec2 sample_position = vec2(float(x), float(y));
+			float weight = exp(-dot(sample_position, sample_position) * 0.5);
+			vec2 sample_offset = sample_position * radius * 0.5;
+			blurred += texture(screen_texture, source_uv + sample_offset) * weight;
+			total_weight += weight;
+		}
+	}
+	blurred /= total_weight;
 	vec2 point = abs(UV - vec2(0.5)) - vec2(0.455);
 	float distance_to_rounding = length(max(point, vec2(0.0))) + min(max(point.x, point.y), 0.0) - 0.045;
 	float mask = 1.0 - smoothstep(-0.0025, 0.0025, distance_to_rounding);
@@ -45,8 +58,10 @@ void fragment() {
 	vec2 uv = UV;
 	float vertical_mix = smoothstep(0.0, 1.0, uv.y + 0.06 * sin(uv.x * 4.2));
 	vec3 color = mix(top_color.rgb, bottom_color.rgb, vertical_mix);
-	float upper_glow = soft_orb(uv, vec2(0.16, 0.10), vec2(0.62, 0.52));
-	float lower_glow = soft_orb(uv, vec2(0.86, 0.84), vec2(0.58, 0.62));
+	float upper_left_glow = soft_orb(uv, vec2(0.14, 0.10), vec2(0.52, 0.52));
+	float upper_right_glow = soft_orb(uv, vec2(0.86, 0.10), vec2(0.52, 0.52));
+	float upper_glow = max(upper_left_glow, upper_right_glow);
+	float lower_glow = soft_orb(uv, vec2(0.50, 0.88), vec2(0.72, 0.58));
 	float center_light = soft_orb(uv, vec2(0.55, 0.43), vec2(0.80, 0.74));
 	color = mix(color, glow_a.rgb, upper_glow * glow_a.a);
 	color = mix(color, glow_b.rgb, lower_glow * glow_b.a);
@@ -99,6 +114,8 @@ var _last_wide_layout := false
 var _layout_refresh_queued := false
 var _last_layout_size := Vector2.ZERO
 var _toast_token := 0
+var _toast_is_error := false
+var _toast_tween: Tween
 var _transition_token := 0
 var _last_mistake_count := -1
 var _capturing_shortcut := ""
@@ -277,17 +294,27 @@ func _build_shell() -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 10)
 	top_glass.add_child(top)
+	var brand_pill := PanelContainer.new()
+	brand_pill.name = "TopBarBrandPill"
+	brand_pill.theme_type_variation = "TopBarBrandPill"
+	brand_pill.custom_minimum_size.x = 112
+	top.add_child(brand_pill)
 	brand_label = Label.new()
 	brand_label.text = "SUDOKU"
 	brand_label.theme_type_variation = "TopBarBrand"
-	brand_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(brand_label)
+	brand_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	brand_pill.add_child(brand_label)
+	var top_spacer := Control.new()
+	top_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(top_spacer)
 	status_pill = PanelContainer.new()
 	status_pill.name = "TopBarStatusPill"
 	status_pill.theme_type_variation = "TopBarOfflineStatusPill"
+	status_pill.custom_minimum_size.x = 112
 	top.add_child(status_pill)
 	status_label = Label.new()
 	status_label.theme_type_variation = "TopBarOfflineStatus"
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status_pill.add_child(status_label)
 	content = VBoxContainer.new()
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -295,6 +322,7 @@ func _build_shell() -> void:
 	content.add_theme_constant_override("separation", 16)
 	shell_outer.add_child(content)
 	toast_panel = PanelContainer.new()
+	toast_panel.name = "ToastPanel"
 	toast_panel.theme_type_variation = "ToastPanel"
 	toast_panel.anchor_left = 0.5
 	toast_panel.anchor_right = 0.5
@@ -309,7 +337,6 @@ func _build_shell() -> void:
 	toast_panel.visible = false
 	add_child(toast_panel)
 	toast_label = Label.new()
-	toast_label.custom_minimum_size.x = 420
 	toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -328,9 +355,7 @@ func _update_shell_width() -> void:
 		var available_width := size.x - float(shell_margin.get_theme_constant("margin_left") + shell_margin.get_theme_constant("margin_right"))
 		shell_outer.custom_minimum_size.x = clampf(available_width, 320.0, maximum_width)
 		if toast_panel != null:
-			var toast_bottom := maxf(18.0, safe_insets.w + 12.0)
-			toast_panel.offset_bottom = -toast_bottom
-			toast_panel.offset_top = -toast_bottom - 58.0
+			_layout_toast(_toast_is_error)
 
 func _safe_area_insets() -> Vector4:
 	if not OS.has_feature("mobile"):
@@ -391,7 +416,7 @@ func _apply_theme() -> void:
 	_update_shell_width()
 	if background_layer != null and background_layer.material is ShaderMaterial:
 		var material := background_layer.material as ShaderMaterial
-		material.set_shader_parameter("top_color", Color("06101d") if dark else Color("f8fcff"))
+		material.set_shader_parameter("top_color", Color("06101d") if dark else Color("e7f4ff"))
 		material.set_shader_parameter("bottom_color", Color("102b49") if dark else Color("dcecff"))
 		material.set_shader_parameter("glow_a", Color(0.20, 0.72, 1.0, 0.34 if dark else 0.22))
 		material.set_shader_parameter("glow_b", Color(0.56, 0.38, 1.0, 0.25 if dark else 0.14))
@@ -1046,8 +1071,8 @@ func _build_board(side: float) -> CenterContainer:
 	blur_shader.code = PAUSE_BLUR_SHADER_CODE
 	var blur_material := ShaderMaterial.new()
 	blur_material.shader = blur_shader
-	blur_material.set_shader_parameter("blur_lod", 6.2)
-	blur_material.set_shader_parameter("tint_color", Color(theme.get_color("surface", "App"), 0.38))
+	blur_material.set_shader_parameter("blur_radius", 7.0)
+	blur_material.set_shader_parameter("tint_color", Color(theme.get_color("surface", "App"), 0.32))
 	pause_blur_layer.material = blur_material
 	pause_overlay.add_child(pause_blur_layer)
 	var pause_center := CenterContainer.new()
@@ -2294,9 +2319,39 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 	toast_panel.theme_type_variation = "ErrorToastPanel" if is_error else "ToastPanel"
 	toast_label.theme_type_variation = "ErrorToastLabel" if is_error else "ToastLabel"
 	toast_label.text = ("⚠  " + translated) if is_error and not translated.is_empty() else translated
+	_toast_is_error = is_error
+	_layout_toast(is_error)
+	toast_label.add_theme_font_size_override("font_size", 26 if is_error else 22)
 	toast_panel.visible = not translated.is_empty()
 	if not translated.is_empty():
+		if _toast_tween != null and _toast_tween.is_valid():
+			_toast_tween.kill()
+		toast_panel.modulate.a = 0.0
+		_toast_tween = create_tween().set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+		_toast_tween.tween_property(toast_panel, "modulate:a", 1.0, 0.16)
 		get_tree().create_timer(3.8 if is_error else 3.2).timeout.connect(_dismiss_toast.bind(_toast_token))
+
+func _layout_toast(is_error: bool) -> void:
+	if toast_panel == null:
+		return
+	var safe_insets := _safe_area_insets()
+	var half_width := minf(340.0, maxf(150.0, (size.x - 48.0) * 0.5))
+	toast_panel.anchor_left = 0.5
+	toast_panel.anchor_right = 0.5
+	toast_panel.offset_left = -half_width
+	toast_panel.offset_right = half_width
+	if is_error:
+		var toast_top := maxf(82.0, safe_insets.y + 72.0)
+		toast_panel.anchor_top = 0.0
+		toast_panel.anchor_bottom = 0.0
+		toast_panel.offset_top = toast_top
+		toast_panel.offset_bottom = toast_top + 72.0
+	else:
+		var toast_bottom := maxf(18.0, safe_insets.w + 12.0)
+		toast_panel.anchor_top = 1.0
+		toast_panel.anchor_bottom = 1.0
+		toast_panel.offset_top = -toast_bottom - 58.0
+		toast_panel.offset_bottom = -toast_bottom
 
 func _dismiss_toast(token: int) -> void:
 	if token == _toast_token and toast_panel != null:

@@ -67,13 +67,20 @@ static func build(dark: bool, high_contrast: bool = false) -> Theme:
 	top_bar.content_margin_top = 9
 	top_bar.content_margin_bottom = 9
 	theme.set_stylebox("panel", "TopBarGlass", top_bar)
+	theme.set_type_variation("TopBarBrandPill", "PanelContainer")
+	var brand_pill := _glass_box(control.lerp(accent, 0.14), 14, Color(accent, 0.50), 1, Color(glass_shadow, 0.38), 2, 1)
+	brand_pill.content_margin_left = 10
+	brand_pill.content_margin_right = 10
+	brand_pill.content_margin_top = 4
+	brand_pill.content_margin_bottom = 4
+	theme.set_stylebox("panel", "TopBarBrandPill", brand_pill)
 	theme.set_type_variation("TopBarBrand", "Label")
-	theme.set_color("font_color", "TopBarBrand", text)
-	theme.set_font_size("font_size", "TopBarBrand", 17)
+	theme.set_color("font_color", "TopBarBrand", accent.lightened(0.12) if dark else accent.darkened(0.10))
+	theme.set_font_size("font_size", "TopBarBrand", 16)
 	for status_style in ["TopBarOnlineStatusPill", "TopBarOfflineStatusPill"]:
 		theme.set_type_variation(status_style, "PanelContainer")
 	var online_pill := _glass_box(control.lerp(accent, 0.16), 14, Color(accent, 0.48), 1, Color(glass_shadow, 0.46), 2, 1)
-	var offline_pill := _glass_box(Color(control, 0.74), 14, Color(glass_edge, 0.72), 1, Color(glass_shadow, 0.30), 1, 0)
+	var offline_pill := _glass_box(control.lerp(accent, 0.10), 14, Color(accent, 0.38), 1, Color(glass_shadow, 0.30), 1, 0)
 	for status_pill in [online_pill, offline_pill]:
 		status_pill.content_margin_left = 10
 		status_pill.content_margin_right = 10
@@ -85,7 +92,7 @@ static func build(dark: bool, high_contrast: bool = false) -> Theme:
 	theme.set_color("font_color", "TopBarOnlineStatus", accent.lightened(0.12) if dark else accent.darkened(0.08))
 	theme.set_font_size("font_size", "TopBarOnlineStatus", 13)
 	theme.set_type_variation("TopBarOfflineStatus", "Label")
-	theme.set_color("font_color", "TopBarOfflineStatus", muted)
+	theme.set_color("font_color", "TopBarOfflineStatus", muted.lerp(text, 0.38))
 	theme.set_font_size("font_size", "TopBarOfflineStatus", 13)
 	theme.set_type_variation("HomeHero", "PanelContainer")
 	var home_hero := _glass_box(surface.lerp(accent, 0.075), 30, Color(accent, 0.42), 1, glass_shadow, 22, 8)
@@ -305,14 +312,15 @@ static func build(dark: bool, high_contrast: bool = false) -> Theme:
 	theme.set_type_variation("ToastLabel", "Label")
 	theme.set_color("font_color", "ToastLabel", text)
 	theme.set_type_variation("ErrorToastPanel", "PanelContainer")
-	var error_toast := _glass_box(Color("7a1824") if dark else Color("fff0f1"), 19, Color("ff453a"), 2, glass_shadow, 0, 0)
+	var error_toast := _glass_box(Color("8f1726") if dark else Color("ffe4e7"), 19, Color("ff453a"), 3, glass_shadow, 0, 0)
 	error_toast.content_margin_left = 22
 	error_toast.content_margin_right = 22
 	error_toast.content_margin_top = 10
 	error_toast.content_margin_bottom = 10
 	theme.set_stylebox("panel", "ErrorToastPanel", error_toast)
 	theme.set_type_variation("ErrorToastLabel", "Label")
-	theme.set_color("font_color", "ErrorToastLabel", Color("ffd7da") if dark else Color("9f1725"))
+	theme.set_color("font_color", "ErrorToastLabel", Color("ffd7da") if dark else Color("8b1020"))
+	theme.set_font_size("font_size", "ErrorToastLabel", 26)
 	theme.set_type_variation("ConfirmationCard", "PanelContainer")
 	theme.set_stylebox("panel", "ConfirmationCard", _glass_box(surface, 28, glass_edge, 1, glass_shadow, 22, 8))
 	theme.set_type_variation("DestructiveButton", "Button")

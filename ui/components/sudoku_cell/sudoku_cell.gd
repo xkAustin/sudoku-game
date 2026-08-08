@@ -151,11 +151,11 @@ func _apply_background(value: int) -> void:
 		number_color = Color.TRANSPARENT
 	for color_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_disabled_color"]:
 		add_theme_color_override(color_name, number_color)
-	add_theme_font_size_override("font_size", (21 if grid_size == 16 else 25) if clue else (23 if grid_size == 16 else 28))
+	add_theme_font_size_override("font_size", (24 if grid_size == 16 else 25) if clue else (26 if grid_size == 16 else 28))
 	var needs_outline := value != 0 and (selected or grid_size == 16)
-	var outline_color := Color(0.02, 0.12, 0.24, 0.34) if selected else Color(1, 1, 1, 0.22)
+	var outline_color := Color(0.01, 0.06, 0.12, 0.68) if number_color.get_luminance() > 0.55 else Color(1, 1, 1, 0.70)
 	add_theme_color_override("font_outline_color", outline_color if needs_outline else Color.TRANSPARENT)
-	add_theme_constant_override("outline_size", 1 if needs_outline else 0)
+	add_theme_constant_override("outline_size", (2 if grid_size == 16 else 1) if needs_outline else 0)
 
 func _conflict_outline_style() -> StyleBoxFlat:
 	var outline := StyleBoxFlat.new()

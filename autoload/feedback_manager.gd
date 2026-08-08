@@ -18,7 +18,7 @@ func _ready() -> void:
 	_player.stream = _default_stream
 	_player.volume_db = -18.0
 	_error_player.stream = _default_error_stream
-	_error_player.volume_db = -12.0
+	_error_player.volume_db = -7.0
 	EventBus.settings_changed.connect(reload_custom_sound)
 
 func input_feedback() -> void:
@@ -103,17 +103,17 @@ func _make_tone() -> AudioStreamWAV:
 
 func _make_error_tone() -> AudioStreamWAV:
 	var mix_rate := 22050
-	var duration := 0.15
+	var duration := 0.22
 	var sample_count := int(float(mix_rate) * duration)
 	var bytes := PackedByteArray()
 	bytes.resize(sample_count * 2)
 	for index in sample_count:
 		var time := float(index) / float(mix_rate)
-		var pulse_time := fmod(time, 0.075)
-		var pulse_envelope := exp(-pulse_time * 31.0)
-		var gap := 0.0 if (time > 0.058 and time < 0.075) else 1.0
-		var tone := sin(TAU * 285.0 * time) * 0.66 + sin(TAU * 430.0 * time) * 0.24
-		var sample := clampf(tone * pulse_envelope * gap * 0.72, -1.0, 1.0)
+		var pulse_time := fmod(time, 0.11)
+		var pulse_envelope := exp(-pulse_time * 24.0)
+		var gap := 0.0 if pulse_time > 0.072 else 1.0
+		var tone := sin(TAU * 250.0 * time) * 0.68 + sin(TAU * 390.0 * time) * 0.28
+		var sample := clampf(tone * pulse_envelope * gap * 0.78, -1.0, 1.0)
 		bytes.encode_s16(index * 2, int(sample * 32767.0))
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
