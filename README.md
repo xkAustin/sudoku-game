@@ -84,8 +84,11 @@ core/services/            game, challenge and leaderboard application services
 core/sudoku/              solver, generator, validator, uniqueness and difficulty
 scripts/                  isolated Supabase Data API and leaderboard modules
 ui/components/            accessible Sudoku cell control
+ui/layout/                shared responsive geometry policy
+ui/localization/          language selection and localized text policy
 ui/scenes/main/           responsive application and main scene
 ui/themes/                theme resource and builder
+ui/views/                 independently built application views
 assets/app_icons/         original SVG application/adaptive icons
 backend/supabase/         SQL, seed, Edge Functions and backend tests
 tests/                    executable Godot runner and full-suite command

@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_background_timing()
 	_test_idle_work_scheduling()
 	_test_responsive_layout()
+	_test_localization_policy()
 	_test_sync_manager_retry()
 	_test_hexadoku()
 	_test_online_leaderboard()
@@ -157,6 +158,12 @@ func _test_responsive_layout() -> void:
 	_assert(ResponsiveLayout.shell_max_width(wide_size) == 2440.0 and ResponsiveLayout.shell_max_width(narrow_size) == 1120.0, "shell width caps follow the shared layout policy")
 	_assert(is_equal_approx(ResponsiveLayout.game_board_side(narrow_size, 0.0), 390.0), "compact board size preserves mobile side padding")
 	_assert(ResponsiveLayout.responsive_columns(wide_size, 3, 1) == 3 and ResponsiveLayout.responsive_columns(narrow_size, 3, 1) == 1, "responsive grid columns use the shared breakpoint")
+
+func _test_localization_policy() -> void:
+	_assert(AppLocalizer.resolve_language("system", "zh_CN") == "zh", "system language follows a Chinese locale")
+	_assert(AppLocalizer.resolve_language("system", "en_US") == "en", "system language falls back to English outside Chinese locales")
+	_assert(AppLocalizer.resolve_language("en", "zh_CN") == "en", "explicit English overrides the system locale")
+	_assert(AppLocalizer.text("数独", "Sudoku", "zh", "en_US") == "数独", "localized text follows the explicit language")
 
 func _test_sync_manager_retry() -> void:
 	var sync: Node = root.get_node("SyncManager")
