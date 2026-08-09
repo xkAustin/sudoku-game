@@ -16,6 +16,8 @@ export function error(code: string, message: string, status = 400): Response {
 export class RequestBodyTooLargeError extends Error {}
 export class InvalidRequestBodyError extends Error {}
 
+const SERVICE_REQUEST_TIMEOUT_MS = 8_000;
+
 export async function readJsonBody(request: Request, maxBytes: number): Promise<unknown> {
   const contentLength = request.headers.get("content-length");
   if (contentLength !== null) {
@@ -70,7 +72,8 @@ export function serviceRequest(path: string, init: RequestInit = {}): Promise<Re
   headers.set("Authorization", `Bearer ${serviceKey}`);
   headers.set("apikey", serviceKey);
   headers.set("Content-Type", "application/json");
-  return fetch(`${env("SUPABASE_URL")}/rest/v1/${path}`, { ...init, headers });
+  const signal = init.signal ?? AbortSignal.timeout(SERVICE_REQUEST_TIMEOUT_MS);
+  return fetch(`${env("SUPABASE_URL")}/rest/v1/${path}`, { ...init, headers, signal });
 }
 
 export async function hmacHex(message: string): Promise<string> {
