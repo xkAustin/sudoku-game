@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema: measured query indexes.
 create index if not exists score_submission_rate_limit_lookup
   on public.score_submissions (installation_id, submitted_at desc);
 

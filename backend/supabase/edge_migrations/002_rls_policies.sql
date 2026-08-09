@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema; migration versions are unique in this chain.
 alter table public.ranked_challenges enable row level security;
 alter table public.ranked_challenges force row level security;
 alter table public.score_submissions enable row level security;

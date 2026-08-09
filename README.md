@@ -155,7 +155,9 @@ Run the fast suite:
 The script performs the required headless Godot import first, so it also works
 in a fresh clone with no `.godot` cache. It exits nonzero on any GDScript,
 Sudoku, serialization, debug smoke, shared UI smoke, Deno test or TypeScript
-failure. GitHub Actions runs this complete fast suite on each push and pull request. Run the
+failure. Its self-tested log checker also rejects Godot script errors that can
+otherwise return process exit code zero. GitHub Actions runs this complete fast
+suite on each push and pull request. Run the
 100-puzzles-per-difficulty stress pass locally with:
 
 ```sh

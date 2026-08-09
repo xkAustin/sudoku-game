@@ -47,7 +47,18 @@ func request_json(method: HTTPClient.Method, endpoint: String, body: Dictionary 
 		}, 0)
 	return request_id
 
+func cancel_request(request_id: String) -> bool:
+	var request := _requests.get(request_id) as HTTPRequest
+	if request == null:
+		return false
+	_requests.erase(request_id)
+	request.cancel_request()
+	request.queue_free()
+	return true
+
 func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, request_id: String) -> void:
+	if not _requests.has(request_id):
+		return
 	var request: HTTPRequest = _requests.get(request_id)
 	_requests.erase(request_id)
 	if request != null:

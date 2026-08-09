@@ -1,7 +1,7 @@
 -- Read-only production context plus a representative before/after benchmark
 -- for the optional Edge query indexes. All benchmark rows, indexes and helper
 -- functions live in pg_temp and disappear when this query session ends.
--- Run before applying migration 010:
+-- Run before applying optional Edge migration 009:
 --   supabase db query --linked \
 --     --file backend/supabase/tests/explain_edge_queries.sql \
 --     --output json
@@ -150,7 +150,7 @@ values
     $query$)
   );
 
--- Migration 010 candidate indexes.
+-- Optional Edge migration 009 candidate indexes.
 create index benchmark_rate_limit_lookup
   on benchmark_score_submissions (installation_id, submitted_at desc);
 

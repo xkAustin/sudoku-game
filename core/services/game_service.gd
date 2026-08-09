@@ -19,6 +19,7 @@ var session: GameSession
 var selected_index := -1
 var notes_mode := false
 var paused := false
+var board_revision := 0
 var _generation_thread: Thread
 var _generation_difficulty := 0
 var _generation_seed := 0
@@ -54,6 +55,7 @@ func _generate_worker() -> Dictionary:
 
 func start_session(result: Dictionary) -> void:
 	session = GameSession.create(result["puzzle"], result["solution"], int(result["difficulty"]))
+	mark_board_dirty()
 	AppState.record_start(session.difficulty)
 	AppState.set_session(session)
 	selected_index = _first_empty()
@@ -63,6 +65,7 @@ func start_session(result: Dictionary) -> void:
 
 func resume_session(saved: GameSession) -> void:
 	session = saved
+	mark_board_dirty()
 	paused = false
 	_apply_background_elapsed()
 	AppState.set_session(session)
@@ -110,6 +113,7 @@ func undo() -> void:
 		session.notes[index] = int(change["old_notes"])
 	session.redo_stack.append(record)
 	session.operation_count += 1
+	mark_board_dirty()
 	FeedbackManager.input_feedback()
 	_state_changed()
 
@@ -123,6 +127,7 @@ func redo() -> void:
 		session.notes[index] = int(change["new_notes"])
 	session.undo_stack.append(record)
 	session.operation_count += 1
+	mark_board_dirty()
 	FeedbackManager.input_feedback()
 	_state_changed()
 
@@ -191,6 +196,7 @@ func _apply_new_record(record: MoveRecord, error_feedback: bool = false) -> void
 	session.operation_count += 1
 	session.undo_stack.append(record)
 	session.redo_stack.clear()
+	mark_board_dirty()
 	if error_feedback:
 		FeedbackManager.error_feedback()
 	else:
@@ -213,6 +219,9 @@ func _apply_new_record(record: MoveRecord, error_feedback: bool = false) -> void
 func _state_changed() -> void:
 	AppState.request_save()
 	EventBus.session_changed.emit()
+
+func mark_board_dirty() -> void:
+	board_revision += 1
 
 func _apply_background_elapsed(now_ms: int = 0) -> void:
 	if session == null or session.backgrounded_at_unix_ms <= 0:

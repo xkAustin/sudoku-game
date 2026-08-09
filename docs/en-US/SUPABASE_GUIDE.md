@@ -63,31 +63,35 @@ removed.
 Before deploying the optional Edge Functions, apply their private atomic-submit
 migration:
 
+On a new project, first apply every file in
+`backend/supabase/edge_migrations/` in filename order. The commands below are
+the upgrade sequence for an existing Edge schema with migrations 001–006.
+
 ```sh
 supabase db query --linked \
-  --file backend/supabase/migrations/007_atomic_edge_submissions.sql
+  --file backend/supabase/edge_migrations/007_atomic_edge_submissions.sql
 supabase db query --linked \
-  --file backend/supabase/migrations/008_edge_service_permissions.sql
+  --file backend/supabase/edge_migrations/008_edge_service_permissions.sql
 supabase db query --linked \
   --file backend/supabase/tests/explain_edge_queries.sql \
   --output json
 supabase db query --linked \
-  --file backend/supabase/migrations/010_edge_query_performance.sql
+  --file backend/supabase/edge_migrations/009_edge_query_performance.sql
 supabase functions deploy \
   get-ranked-challenge submit-score get-leaderboard \
   --workdir backend --use-api
 ./backend/supabase/tests/live_edge_functions.sh
 ```
 
-Migration 008 explicitly grants the Edge runtime only the private table and
-view reads it needs; direct client access remains revoked. Migration 007 locks
+Edge migration 008 explicitly grants the Edge runtime only the private table and
+view reads it needs; direct client access remains revoked. Edge migration 007 locks
 each installation ID while checking the rolling one-minute limit and
 inserting the verified score. The Edge submit handler also streams and counts
 the real request bytes, so missing or false `Content-Length` values cannot bypass
 the 16 KiB limit. Privileged Data API requests use an eight-second default
 timeout, and the leaderboard loads its independent Top 100 and own-rank reads
-concurrently. The Edge benchmark creates 50,000 session-local rows; migration
-010 is applied only after its two indexes improve the target plans. Verify a
+concurrently. The Edge benchmark creates 50,000 session-local rows; Edge
+migration 009 is applied only after its two indexes improve the target plans. Verify a
 local or disposable database with:
 
 ```sh
@@ -97,6 +101,17 @@ psql "$DATABASE_URL" \
 ```
 
 The verification transaction rolls back all test rows.
+
+Verify both migration chains against separate empty PostgreSQL 17 databases
+before deployment:
+
+```sh
+./backend/supabase/tests/clean_boot.sh
+```
+
+This rejects duplicate migration versions, reapplies both chains and the Edge
+seed to verify idempotency, and verifies required objects, forced RLS, grants,
+performance indexes and the atomic Edge submission transaction.
 
 On 2026-08-09 the rate-limit lookup improved by 1.71× and the challenge
 leaderboard by 2.23× in the pre-deployment benchmark. After deployment, all

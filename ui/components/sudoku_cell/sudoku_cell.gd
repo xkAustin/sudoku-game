@@ -15,6 +15,8 @@ var box_size := 3
 var completion_glow := 0.0
 var completion_pulse_count := 0
 var _state_initialized := false
+var _background_style_cache: Dictionary = {}
+var _conflict_style_cache: StyleBoxFlat
 
 func configure(index: int, size_value: int = 9, box_value: int = 3) -> void:
 	cell_index = index
@@ -24,6 +26,8 @@ func configure(index: int, size_value: int = 9, box_value: int = 3) -> void:
 	focus_mode = Control.FOCUS_ALL
 	clip_text = true
 	_state_initialized = false
+	_background_style_cache.clear()
+	_conflict_style_cache = null
 
 func update_state(value: int, notes: int, is_clue: bool, is_selected: bool, is_related: bool, is_same: bool, is_conflict: bool, note_highlights: int = 0) -> bool:
 	if _state_initialized and cell_value == value and notes_mask == notes and clue == is_clue and selected == is_selected and related == is_related and same_value == is_same and conflict == is_conflict and highlighted_notes_mask == note_highlights:
@@ -48,6 +52,8 @@ func update_state(value: int, notes: int, is_clue: bool, is_selected: bool, is_r
 func refresh_theme() -> void:
 	if not _state_initialized:
 		return
+	_background_style_cache.clear()
+	_conflict_style_cache = null
 	_apply_background(cell_value)
 	queue_redraw()
 
@@ -134,28 +140,32 @@ func _apply_background(value: int) -> void:
 	var surface := get_theme_color("surface", "App")
 	var control := get_theme_color("control", "App")
 	var text_color := get_theme_color("text", "App")
-	var fill := surface
-	if related:
-		fill = control
-	if same_value:
-		fill = surface.lerp(accent, 0.20)
-	if selected:
-		fill = accent
-	elif value != 0 and not clue and not related and not same_value:
-		fill = surface.lerp(accent, 0.055)
-	var background := StyleBoxFlat.new()
-	background.bg_color = fill
-	background.set_corner_radius_all(0)
-	# Always clip the four outer cells to the board's inner curve. This keeps
-	# related-row/column gray fills, selection and same-value fills identical at
-	# the corners without rounding any of the internal cell edges.
-	var rounded_board_corner := _apply_board_corner_radius(background, 18)
-	background.anti_aliasing = rounded_board_corner
-	background.corner_detail = 16 if rounded_board_corner else 8
-	background.content_margin_left = 0
-	background.content_margin_right = 0
-	background.content_margin_top = 0
-	background.content_margin_bottom = 0
+	var style_key := 3 if selected else (2 if same_value else (1 if related else (4 if value != 0 and not clue else 0)))
+	var background := _background_style_cache.get(style_key) as StyleBoxFlat
+	if background == null:
+		var fill := surface
+		if style_key == 1:
+			fill = control
+		elif style_key == 2:
+			fill = surface.lerp(accent, 0.20)
+		elif style_key == 3:
+			fill = accent
+		elif style_key == 4:
+			fill = surface.lerp(accent, 0.055)
+		background = StyleBoxFlat.new()
+		background.bg_color = fill
+		background.set_corner_radius_all(0)
+		# Always clip the four outer cells to the board's inner curve. This keeps
+		# related-row/column gray fills, selection and same-value fills identical at
+		# the corners without rounding any of the internal cell edges.
+		var rounded_board_corner := _apply_board_corner_radius(background, 18)
+		background.anti_aliasing = rounded_board_corner
+		background.corner_detail = 16 if rounded_board_corner else 8
+		background.content_margin_left = 0
+		background.content_margin_right = 0
+		background.content_margin_top = 0
+		background.content_margin_bottom = 0
+		_background_style_cache[style_key] = background
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		add_theme_stylebox_override(state, background)
 	var number_color := Color.WHITE if selected else (Color("ef6b73") if conflict else (text_color if clue else accent))
@@ -170,6 +180,8 @@ func _apply_background(value: int) -> void:
 	add_theme_constant_override("outline_size", (2 if grid_size == 16 else 1) if needs_outline else 0)
 
 func _conflict_outline_style() -> StyleBoxFlat:
+	if _conflict_style_cache != null:
+		return _conflict_style_cache
 	var outline := StyleBoxFlat.new()
 	outline.bg_color = Color.TRANSPARENT
 	outline.border_color = Color("ef6b73")
@@ -178,7 +190,8 @@ func _conflict_outline_style() -> StyleBoxFlat:
 	var rounded_corner := _apply_board_corner_radius(outline, 15)
 	outline.anti_aliasing = true
 	outline.corner_detail = 12 if rounded_corner else 8
-	return outline
+	_conflict_style_cache = outline
+	return _conflict_style_cache
 
 func _apply_board_corner_radius(style: StyleBoxFlat, radius: int) -> bool:
 	var row := cell_index / grid_size

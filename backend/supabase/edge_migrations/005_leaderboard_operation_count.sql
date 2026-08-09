@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema: include operation counts in view rebuilds.
 drop view if exists public.challenge_leaderboard;
 drop view if exists public.best_verified_scores;
 

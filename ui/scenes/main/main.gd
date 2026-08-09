@@ -123,6 +123,12 @@ var _shortcut_capture_button: Button
 var _sound_customization_expanded := false
 var _completed_units: Dictionary = {}
 var _completed_units_initialized := false
+var _derived_board_revision := -1
+var _derived_auto_check := true
+var _derived_hide_completed := true
+var _cached_conflicts: Variant = {}
+var _cached_value_counts := PackedInt32Array()
+var _cached_completed_units: Dictionary = {}
 var _pending_ranked_submission: Dictionary = {}
 var _ranked_result_session: GameSession
 var _ranked_upload_state := ""
@@ -133,6 +139,7 @@ var _last_timer_text := ""
 
 const THEME_SETTING_KEYS := ["theme", "high_contrast", "ui_scale"]
 const SHELL_SETTING_KEYS := ["language", "leaderboard_network_allowed"]
+const BOARD_DERIVED_SETTING_KEYS := ["auto_check", "hide_completed_numbers"]
 
 func _ready() -> void:
 	_ensure_shortcut_settings()
@@ -421,6 +428,9 @@ func _on_settings_changed(changed_keys: PackedStringArray) -> void:
 		_apply_theme()
 	if _setting_keys_match(changed_keys, SHELL_SETTING_KEYS):
 		_build_shell_labels()
+	if _current_view == "game" and _setting_keys_match(changed_keys, BOARD_DERIVED_SETTING_KEYS):
+		_invalidate_board_derived_state()
+		_refresh_game()
 
 func _setting_keys_match(changed_keys: PackedStringArray, watched_keys: Array) -> bool:
 	if changed_keys.is_empty():
@@ -661,6 +671,9 @@ func _restore_shortcut_defaults() -> void:
 	_show_toast(_l("已恢复系统默认快捷键", "System-default shortcuts restored"))
 
 func _show_menu() -> void:
+	if _current_view == "loading":
+		challenge_service.cancel_fetch()
+		_pending_offline_ranked = false
 	_current_view = "menu"
 	_clear_content()
 	MainEntryViews.build_menu(self, content, _is_wide_layout())
@@ -787,11 +800,19 @@ func _show_loading(message: String) -> void:
 	hint.text = _l("生成和验证不会阻塞界面", "Generation and validation run without freezing the interface")
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(hint)
+	var cancel := _button(_l("取消并返回", "Cancel and go back"))
+	cancel.custom_minimum_size.x = 260
+	cancel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	cancel.pressed.connect(_cancel_loading)
+	content.add_child(cancel)
 	var bottom := Control.new()
 	bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(bottom)
 
 func _on_generation_finished(result: Dictionary) -> void:
+	if _current_view != "loading":
+		_pending_offline_ranked = false
+		return
 	if _pending_offline_ranked:
 		_pending_offline_ranked = false
 		var ranked_session := GameSession.create(result["puzzle"], result["solution"], int(result["difficulty"]), "ranked")
@@ -811,6 +832,8 @@ func _on_generation_failed(message: String) -> void:
 		_show_difficulty(ranked_generation)
 
 func _on_challenge_received(challenge: Dictionary) -> void:
+	if _current_view != "loading":
+		return
 	_pending_offline_ranked = false
 	var puzzle := SudokuValidator.string_to_board(str(challenge.get("puzzle", "")))
 	var solution := SudokuSolver.new().solve(puzzle) if puzzle.size() == 81 else GridSolver.new(16, 4).solve(puzzle)
@@ -829,6 +852,8 @@ func _on_challenge_received(challenge: Dictionary) -> void:
 	_show_game()
 
 func _on_challenge_failed(message: String) -> void:
+	if _current_view != "loading":
+		return
 	var cached := challenge_service.cached(_ranked_difficulty)
 	if not cached.is_empty():
 		_show_toast(_l("网络不可用，已使用缓存题目", "Network unavailable. Using a cached puzzle."))
@@ -843,6 +868,7 @@ func _show_game() -> void:
 	cell_buttons.clear()
 	_completed_units.clear()
 	_completed_units_initialized = false
+	_invalidate_board_derived_state()
 	_last_mistake_count = -1
 	var wide := _is_wide_layout()
 	var header := HBoxContainer.new()
@@ -1068,12 +1094,14 @@ func _refresh_game() -> void:
 	var grid_size := game_service.session.grid_size
 	var box_size := game_service.session.box_size
 	var auto_check := game_service.effective_setting("auto_check", true)
+	var hide_completed := game_service.effective_setting("hide_completed_numbers", true)
 	var highlight_same := game_service.effective_setting("highlight_same", true)
 	var highlighted_note_values := ((1 << selected_value) if selected_value != 0 else selected_notes) if highlight_same else 0
 	var highlight_related := game_service.effective_setting("highlight_related", true)
 	var selected_row := selected / grid_size if selected >= 0 else -1
 	var selected_column := selected % grid_size if selected >= 0 else -1
-	var conflicts: Variant = (SudokuValidator.conflicts(game_service.session.board) if grid_size == 9 else GridSolver.new(grid_size, box_size).conflicts(game_service.session.board)) if auto_check else {}
+	var board_changed := _ensure_board_derived_state(auto_check, hide_completed)
+	var conflicts: Variant = _cached_conflicts
 	for index in mini(game_service.session.board.size(), cell_buttons.size()):
 		var row := index / grid_size
 		var column := index % grid_size
@@ -1091,23 +1119,18 @@ func _refresh_game() -> void:
 			auto_check and conflicts.has(index),
 			notes & highlighted_note_values
 		)
-	_update_completed_unit_animations()
-	var value_counts := PackedInt32Array()
-	value_counts.resize(grid_size + 1)
-	for board_value in game_service.session.board:
-		if board_value > 0 and board_value <= grid_size:
-			value_counts[board_value] += 1
-	var hide_completed := game_service.effective_setting("hide_completed_numbers", true)
-	for value in number_buttons:
-		var number_button: Button = number_buttons[value]
-		if is_instance_valid(number_button):
-			var completed_value := hide_completed and value_counts[int(value)] >= grid_size
-			number_button.visible = true
-			number_button.text = "" if completed_value else SudokuCellButton.value_label(int(value))
-			number_button.disabled = completed_value
-			number_button.focus_mode = Control.FOCUS_NONE if completed_value else Control.FOCUS_ALL
-			number_button.mouse_filter = Control.MOUSE_FILTER_IGNORE if completed_value else Control.MOUSE_FILTER_STOP
-			number_button.theme_type_variation = "NumberPadPlaceholder" if completed_value else "NumberPadButton"
+	if board_changed:
+		_update_completed_unit_animations(_cached_completed_units)
+		for value in number_buttons:
+			var number_button: Button = number_buttons[value]
+			if is_instance_valid(number_button):
+				var completed_value := hide_completed and _cached_value_counts[int(value)] >= grid_size
+				number_button.visible = true
+				number_button.text = "" if completed_value else SudokuCellButton.value_label(int(value))
+				number_button.disabled = completed_value
+				number_button.focus_mode = Control.FOCUS_NONE if completed_value else Control.FOCUS_ALL
+				number_button.mouse_filter = Control.MOUSE_FILTER_IGNORE if completed_value else Control.MOUSE_FILTER_STOP
+				number_button.theme_type_variation = "NumberPadPlaceholder" if completed_value else "NumberPadButton"
 	if timer_label != null:
 		_refresh_timer_label()
 	if mistakes_label != null:
@@ -1150,12 +1173,33 @@ func _refresh_game() -> void:
 	if pause_backbuffer != null:
 		pause_backbuffer.visible = game_service.paused
 
-func _update_completed_unit_animations() -> void:
+func _invalidate_board_derived_state() -> void:
+	_derived_board_revision = -1
+
+func _ensure_board_derived_state(auto_check: bool, hide_completed: bool) -> bool:
+	if _derived_board_revision == game_service.board_revision \
+			and _derived_auto_check == auto_check \
+			and _derived_hide_completed == hide_completed:
+		return false
+	var grid_size := game_service.session.grid_size
+	var box_size := game_service.session.box_size
+	_cached_conflicts = (SudokuValidator.conflicts(game_service.session.board) if grid_size == 9 else GridSolver.new(grid_size, box_size).conflicts(game_service.session.board)) if auto_check else {}
+	_cached_value_counts = PackedInt32Array()
+	_cached_value_counts.resize(grid_size + 1)
+	for board_value in game_service.session.board:
+		if board_value > 0 and board_value <= grid_size:
+			_cached_value_counts[board_value] += 1
+	_cached_completed_units = _completed_unit_indices()
+	_derived_board_revision = game_service.board_revision
+	_derived_auto_check = auto_check
+	_derived_hide_completed = hide_completed
+	return true
+
+func _update_completed_unit_animations(current: Dictionary) -> void:
 	if game_service.session == null or game_service.session.mode != "local":
 		_completed_units.clear()
 		_completed_units_initialized = false
 		return
-	var current := _completed_unit_indices()
 	if _completed_units_initialized and not bool(AppState.settings.get("reduce_motion", false)):
 		for key in current:
 			if not _completed_units.has(key):
@@ -1807,6 +1851,7 @@ func _grant_leaderboard_network_and_refresh() -> void:
 	_refresh_leaderboard()
 
 func _revoke_leaderboard_network() -> void:
+	leaderboard_service.cancel_fetch()
 	AppState.settings["leaderboard_network_allowed"] = false
 	AppState.save_settings(PackedStringArray(["leaderboard_network_allowed"]))
 	_show_leaderboard()
@@ -2184,6 +2229,8 @@ func _perform_reset_data(overlay: Control) -> void:
 func _on_back() -> void:
 	if _current_view == "game":
 		_confirm_leave_game()
+	elif _current_view == "loading":
+		_cancel_loading()
 	elif _current_view == "ranked_briefing":
 		_show_difficulty(true)
 	elif _current_view != "menu":
@@ -2192,6 +2239,11 @@ func _on_back() -> void:
 func _navigate(destination: String) -> void:
 	if destination == "menu":
 		_show_menu()
+
+func _cancel_loading() -> void:
+	challenge_service.cancel_fetch()
+	_pending_offline_ranked = false
+	_show_difficulty(_difficulty_ranked)
 
 func _on_network_changed(online: bool) -> void:
 	_set_connection_status(online, SyncManager.queue.size())

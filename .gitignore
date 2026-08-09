@@ -52,6 +52,8 @@ node_modules/
 *.tmp
 *.bak
 *.log
+!tests/fixtures/godot_clean.log
+!tests/fixtures/godot_script_error.log
 *.swp
 *.swo
 *~

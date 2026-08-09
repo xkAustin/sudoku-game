@@ -118,6 +118,13 @@ supabase db query --linked \
   --output table
 ```
 
+Before deployment, clean-boot both independent migration chains in disposable
+PostgreSQL 17 databases:
+
+```sh
+./backend/supabase/tests/clean_boot.sh
+```
+
 Run the repeatable anonymous Data API check:
 
 ```sh
@@ -236,14 +243,17 @@ challenge ID, signed nonce and final board to an Edge Function that verifies the
 solution, expiry and single-use status before calling a private database
 function. The optional signed-challenge functions under
 `backend/supabase/functions/` are retained as a foundation for that future mode.
+On a new project, apply every file in `backend/supabase/edge_migrations/` in
+filename order before deploying those functions. Existing Edge deployments can
+continue from the applicable upgrade migration below.
 Before deploying them, also apply
-`backend/supabase/migrations/007_atomic_edge_submissions.sql`; it makes the
+`backend/supabase/edge_migrations/007_atomic_edge_submissions.sql`; it makes the
 per-installation rolling limit and verified score insert one locked transaction.
-Apply `backend/supabase/migrations/008_edge_service_permissions.sql` as well; it
+Apply `backend/supabase/edge_migrations/008_edge_service_permissions.sql` as well; it
 grants the Edge runtime only the private table and view reads those functions
 need while keeping direct client access revoked.
 Before deploying the functions, run the temporary Edge plan benchmark and apply
-`backend/supabase/migrations/010_edge_query_performance.sql`; it adds the two
+`backend/supabase/edge_migrations/009_edge_query_performance.sql`; it adds the two
 measured lookup indexes without expanding privileges.
 The submit function also counts streamed request bytes instead of trusting the
 `Content-Length` header. Privileged Data API requests have an eight-second

@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema: private leaderboard views.
 create or replace view public.best_verified_scores
 with (security_invoker = true)
 as
