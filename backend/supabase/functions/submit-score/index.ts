@@ -1,4 +1,4 @@
-import { corsHeaders, env, error, hmacHex, json, safeEqual, serviceRequest, sha256Hex } from "../_shared/http.ts";
+import { corsHeaders, env, error, hmacHex, InvalidRequestBodyError, json, readJsonBody, RequestBodyTooLargeError, safeEqual, serviceRequest, sha256Hex } from "../_shared/http.ts";
 import { respectsClues, validCompletedBoard } from "../_shared/sudoku.ts";
 
 type Submission = {
@@ -23,14 +23,20 @@ type Submission = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PLATFORMS = new Set(["android", "ios", "macos", "windows", "linux", "web", "unknown"]);
+const MAX_REQUEST_BYTES = 16_384;
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (request.method !== "POST") return error("METHOD_NOT_ALLOWED", "Only POST is supported.", 405);
-  const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > 16_384) return error("PAYLOAD_TOO_LARGE", "The request is too large.", 413);
+  let body: Submission;
   try {
-    const body = await request.json() as Submission;
+    body = await readJsonBody(request, MAX_REQUEST_BYTES) as Submission;
+  } catch (requestError) {
+    if (requestError instanceof RequestBodyTooLargeError) return error("PAYLOAD_TOO_LARGE", "The request is too large.", 413);
+    if (requestError instanceof InvalidRequestBodyError) return error("INVALID_REQUEST", "The request could not be processed.", 400);
+    return error("INVALID_REQUEST", "The request could not be processed.", 400);
+  }
+  try {
     const validation = validateShape(body);
     if (validation) return validation;
 
@@ -75,39 +81,35 @@ Deno.serve(async (request) => {
       if (!safeEqual(actualHash, challenge.solution_hash)) return error("INVALID_SCORE", "The submitted board is incorrect.");
     }
 
-    const recentResponse = await serviceRequest(`score_submissions?select=id&installation_id=eq.${body.installation_id}&submitted_at=gte.${encodeURIComponent(new Date(now - 60_000).toISOString())}&limit=21`);
-    const recent = recentResponse.ok ? await recentResponse.json() : [];
-    if (Array.isArray(recent) && recent.length >= 20) return error("RATE_LIMITED", "Too many submissions. Try again later.", 429);
-
-    const insertResponse = await serviceRequest("score_submissions?on_conflict=idempotency_key", {
+    const insertResponse = await serviceRequest("rpc/submit_verified_edge_score", {
       method: "POST",
-      headers: { "Prefer": "resolution=ignore-duplicates,return=representation" },
       body: JSON.stringify({
-        idempotency_key: body.idempotency_key,
-        challenge_id: challenge.id,
-        installation_id: body.installation_id,
-        display_name: normalizeName(body.display_name),
-        duration_ms: body.duration_ms,
-        mistakes: body.mistakes,
-        hints_used: body.hints_used,
-        final_board: body.final_board,
-        move_count: body.move_count,
-        move_digest: body.move_digest || null,
-        client_version: body.client_version,
-        platform: body.platform,
-        completed_at: body.completed_at || null,
-        source: submissionSource,
-        difficulty: submissionSource === "offline" ? body.difficulty : challenge.difficulty,
-        puzzle: submissionSource === "offline" ? body.puzzle : challenge.puzzle,
-        verified: true,
-        rejection_reason: null,
+        p_idempotency_key: body.idempotency_key,
+        p_challenge_id: challenge.id,
+        p_installation_id: body.installation_id,
+        p_display_name: normalizeName(body.display_name),
+        p_duration_ms: body.duration_ms,
+        p_mistakes: body.mistakes,
+        p_hints_used: body.hints_used,
+        p_final_board: body.final_board,
+        p_move_count: body.move_count,
+        p_move_digest: body.move_digest || null,
+        p_client_version: body.client_version,
+        p_platform: body.platform,
+        p_completed_at: body.completed_at || null,
+        p_source: submissionSource,
+        p_difficulty: submissionSource === "offline" ? body.difficulty : challenge.difficulty,
+        p_puzzle: submissionSource === "offline" ? body.puzzle : challenge.puzzle,
       }),
     });
     if (!insertResponse.ok) return error("SUBMISSION_FAILED", "The score could not be stored.", 503);
+    const insertResult = await insertResponse.json();
+    if (insertResult?.rate_limited === true) return error("RATE_LIMITED", "Too many submissions. Try again later.", 429);
+    if (insertResult?.accepted !== true) return error("SUBMISSION_FAILED", "The score could not be stored.", 503);
 
     const leaderboardResponse = await serviceRequest(`challenge_leaderboard?select=rank,duration_ms,mistakes,move_count&challenge_id=eq.${challenge.id}&installation_id=eq.${body.installation_id}&limit=1`);
     const rankRows = leaderboardResponse.ok ? await leaderboardResponse.json() : [];
-    return json({ success: true, duplicate: false, verified: true, personal_best: Array.isArray(rankRows) ? rankRows[0] ?? null : null });
+    return json({ success: true, duplicate: insertResult.duplicate === true, verified: true, personal_best: Array.isArray(rankRows) ? rankRows[0] ?? null : null });
   } catch {
     return error("INVALID_REQUEST", "The request could not be processed.", 400);
   }

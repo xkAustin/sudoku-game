@@ -40,13 +40,19 @@ Only deploy the optional signed-challenge functions when that experimental
 service is intentionally enabled:
 
 ```sh
+supabase db query --linked \
+  --file backend/supabase/migrations/007_atomic_edge_submissions.sql
+supabase db query --linked \
+  --file backend/supabase/migrations/008_edge_service_permissions.sql
 supabase secrets set --env-file backend/supabase/.env
 supabase functions deploy get-ranked-challenge
 supabase functions deploy submit-score
 supabase functions deploy get-leaderboard
 ```
 
-The three functions implement API version v1. Breaking changes should use new
+Migration 008 explicitly gives the Edge runtime only the private table and view
+reads it needs; direct client access remains revoked. The three functions
+implement API version v1. Breaking changes should use new
 function names or route dispatch while keeping v1 available to compatible clients.
 
 ## Data and abuse controls
@@ -61,7 +67,20 @@ The supported Data API RPC denies direct table access, calculates score
 server-side from bounded metrics, deduplicates a submission UUID and accepts at
 most ten distinct submissions per player UUID per minute. The optional
 signed-challenge submit function separately applies a per-installation rolling
-limit and hard request-size limit.
+limit in the same database transaction as the insert. It streams and counts the
+actual request bytes before parsing, so a missing or false `Content-Length`
+cannot bypass the hard 16 KiB request-size limit.
+
+Verify the optional Edge submission transaction against a disposable or local
+database after applying all migrations:
+
+```sh
+psql "$DATABASE_URL" \
+  --set ON_ERROR_STOP=1 \
+  --file backend/supabase/tests/test_atomic_edge_submissions.sql
+```
+
+The test rolls back its challenge and score rows.
 
 Neither anonymous path proves ownership of a locally generated UUID. A modified
 client can fabricate plausible metrics or create new UUIDs, so production should

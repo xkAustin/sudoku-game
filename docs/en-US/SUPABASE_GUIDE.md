@@ -45,3 +45,30 @@ service-role key in a test script.
 This design provides basic protection for a casual leaderboard. The server
 calculates the final score and validates metrics, but anonymous UUIDs and
 client-reported metrics can still be fabricated.
+
+## Optional signed-challenge functions
+
+Before deploying the optional Edge Functions, apply their private atomic-submit
+migration:
+
+```sh
+supabase db query --linked \
+  --file backend/supabase/migrations/007_atomic_edge_submissions.sql
+supabase db query --linked \
+  --file backend/supabase/migrations/008_edge_service_permissions.sql
+```
+
+Migration 008 explicitly grants the Edge runtime only the private table and
+view reads it needs; direct client access remains revoked. Migration 007 locks
+each installation ID while checking the rolling one-minute limit and
+inserting the verified score. The Edge submit handler also streams and counts
+the real request bytes, so missing or false `Content-Length` values cannot bypass
+the 16 KiB limit. Verify a local or disposable database with:
+
+```sh
+psql "$DATABASE_URL" \
+  --set ON_ERROR_STOP=1 \
+  --file backend/supabase/tests/test_atomic_edge_submissions.sql
+```
+
+The verification transaction rolls back all test rows.

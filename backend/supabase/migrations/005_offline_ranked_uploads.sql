@@ -21,7 +21,10 @@ alter table public.score_submissions
 alter table public.score_submissions
   add constraint score_submissions_source_check check (source in ('online', 'offline')),
   add constraint score_submissions_difficulty_check check (difficulty between 1 and 6),
-  add constraint score_submissions_puzzle_check check (puzzle ~ '^([0-9]{81}|[0-9A-G]{256})$');
+  add constraint score_submissions_puzzle_check check (
+    (char_length(puzzle) = 81 and puzzle ~ '^[0-9]+$')
+    or (char_length(puzzle) = 256 and puzzle ~ '^[0-9A-G]+$')
+  );
 
 create index if not exists score_source_difficulty_lookup
   on public.score_submissions (source, difficulty, submitted_at desc)

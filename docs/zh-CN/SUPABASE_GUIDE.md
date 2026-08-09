@@ -42,3 +42,28 @@ godot --headless --path . --script tests/supabase_live_runner.gd
 
 本方案只提供休闲排行榜基础防作弊。服务器计算最终分数并验证指标，但匿名
 UUID 和客户端指标仍可伪造。
+
+## 可选签名挑战函数
+
+部署可选 Edge Functions 前，先应用其私有原子提交 migration：
+
+```sh
+supabase db query --linked \
+  --file backend/supabase/migrations/007_atomic_edge_submissions.sql
+supabase db query --linked \
+  --file backend/supabase/migrations/008_edge_service_permissions.sql
+```
+
+Migration 008 仅为 Edge 运行时显式授予读取私有表和视图所需的最小权限，
+客户端直连权限仍保持撤销。Migration 007 按安装 ID 加锁，在同一事务内检查
+滚动一分钟限额并写入已验证成绩。
+Edge 提交处理器还会流式统计实际请求字节，因此缺失或伪造
+`Content-Length` 无法绕过 16 KiB 限制。使用本地或一次性数据库验证：
+
+```sh
+psql "$DATABASE_URL" \
+  --set ON_ERROR_STOP=1 \
+  --file backend/supabase/tests/test_atomic_edge_submissions.sql
+```
+
+验证事务会回滚全部测试数据。

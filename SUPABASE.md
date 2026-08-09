@@ -185,3 +185,12 @@ challenge ID, signed nonce and final board to an Edge Function that verifies the
 solution, expiry and single-use status before calling a private database
 function. The optional signed-challenge functions under
 `backend/supabase/functions/` are retained as a foundation for that future mode.
+Before deploying them, also apply
+`backend/supabase/migrations/007_atomic_edge_submissions.sql`; it makes the
+per-installation rolling limit and verified score insert one locked transaction.
+Apply `backend/supabase/migrations/008_edge_service_permissions.sql` as well; it
+grants the Edge runtime only the private table and view reads those functions
+need while keeping direct client access revoked.
+The submit function also counts streamed request bytes instead of trusting the
+`Content-Length` header. A disposable-database regression check is available at
+`backend/supabase/tests/test_atomic_edge_submissions.sql`.

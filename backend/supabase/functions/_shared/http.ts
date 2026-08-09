@@ -13,6 +13,51 @@ export function error(code: string, message: string, status = 400): Response {
   return json({ success: false, error: { code, message } }, status);
 }
 
+export class RequestBodyTooLargeError extends Error {}
+export class InvalidRequestBodyError extends Error {}
+
+export async function readJsonBody(request: Request, maxBytes: number): Promise<unknown> {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null) {
+    if (!/^[0-9]+$/.test(contentLength)) throw new InvalidRequestBodyError("Invalid Content-Length");
+    const declaredLength = Number(contentLength);
+    if (!Number.isSafeInteger(declaredLength)) throw new InvalidRequestBodyError("Invalid Content-Length");
+    if (declaredLength > maxBytes) throw new RequestBodyTooLargeError("Request body is too large");
+  }
+  if (request.body === null) throw new InvalidRequestBodyError("Request body is missing");
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel("Request body is too large");
+        throw new RequestBodyTooLargeError("Request body is too large");
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bodyBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const bodyText = new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes);
+    return JSON.parse(bodyText);
+  } catch {
+    throw new InvalidRequestBodyError("Request body is not valid JSON");
+  }
+}
+
 export function env(name: string): string {
   const value = Deno.env.get(name);
   if (!value) throw new Error(`Missing server environment: ${name}`);
