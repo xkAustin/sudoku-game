@@ -131,6 +131,9 @@ var _sound_customization_tween: Tween
 var _timer_refresh: Timer
 var _last_timer_text := ""
 
+const THEME_SETTING_KEYS := ["theme", "high_contrast", "ui_scale"]
+const SHELL_SETTING_KEYS := ["language", "leaderboard_network_allowed"]
+
 func _ready() -> void:
 	_ensure_shortcut_settings()
 	_configure_initial_window()
@@ -154,8 +157,7 @@ func _ready() -> void:
 	SyncManager.flush_completed.connect(_on_sync_flush_completed)
 	EventBus.toast_requested.connect(_show_toast)
 	EventBus.session_changed.connect(_refresh_game)
-	EventBus.settings_changed.connect(_apply_theme)
-	EventBus.settings_changed.connect(_build_shell_labels)
+	EventBus.settings_changed.connect(_on_settings_changed)
 	EventBus.network_changed.connect(_on_network_changed)
 	EventBus.pending_count_changed.connect(_on_pending_changed)
 	EventBus.navigation_requested.connect(_navigate)
@@ -354,13 +356,13 @@ func _build_shell() -> void:
 
 func _update_shell_width() -> void:
 	if shell_outer != null:
-		var side_margin := 28 if _is_wide_layout() else 24
+		var side_margin := ResponsiveLayout.shell_side_margin(size)
 		var safe_insets := _safe_area_insets()
 		shell_margin.add_theme_constant_override("margin_left", maxi(side_margin, int(ceil(safe_insets.x)) + 12))
 		shell_margin.add_theme_constant_override("margin_right", maxi(side_margin, int(ceil(safe_insets.z)) + 12))
 		shell_margin.add_theme_constant_override("margin_top", maxi(10, int(ceil(safe_insets.y)) + 8))
 		shell_margin.add_theme_constant_override("margin_bottom", maxi(10, int(ceil(safe_insets.w)) + 8))
-		var maximum_width := 2440.0 if _is_wide_layout() else 1120.0
+		var maximum_width := ResponsiveLayout.shell_max_width(size)
 		var available_width := size.x - float(shell_margin.get_theme_constant("margin_left") + shell_margin.get_theme_constant("margin_right"))
 		shell_outer.custom_minimum_size.x = clampf(available_width, 320.0, maximum_width)
 		if toast_panel != null:
@@ -412,7 +414,21 @@ func _rebuild_current_layout() -> void:
 			_show_leaderboard()
 
 func _is_wide_layout() -> bool:
-	return size.x >= 1240.0 and size.x > size.y * 1.12
+	return ResponsiveLayout.is_wide(size)
+
+func _on_settings_changed(changed_keys: PackedStringArray) -> void:
+	if _setting_keys_match(changed_keys, THEME_SETTING_KEYS):
+		_apply_theme()
+	if _setting_keys_match(changed_keys, SHELL_SETTING_KEYS):
+		_build_shell_labels()
+
+func _setting_keys_match(changed_keys: PackedStringArray, watched_keys: Array) -> bool:
+	if changed_keys.is_empty():
+		return true
+	for key in watched_keys:
+		if str(key) in changed_keys:
+			return true
+	return false
 
 func _apply_theme() -> void:
 	var mode := str(AppState.settings.get("theme", "system"))
@@ -625,7 +641,7 @@ func _capture_shortcut_event(event: InputEventKey) -> void:
 	var shortcuts: Dictionary = AppState.settings.get("shortcuts", {}).duplicate(true)
 	shortcuts[_capturing_shortcut] = binding
 	AppState.settings["shortcuts"] = shortcuts
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray(["shortcuts"]))
 	if _shortcut_capture_button != null and is_instance_valid(_shortcut_capture_button):
 		_shortcut_capture_button.text = _shortcut_display(binding)
 		_shortcut_capture_button.theme_type_variation = "ShortcutButton"
@@ -643,7 +659,7 @@ func _cancel_shortcut_capture() -> void:
 func _restore_shortcut_defaults() -> void:
 	AppState.settings["shortcuts"] = _default_shortcuts()
 	AppState.settings["shortcut_platform"] = OS.get_name()
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray(["shortcuts", "shortcut_platform"]))
 	_show_settings()
 	_show_toast(_l("已恢复系统默认快捷键", "System-default shortcuts restored"))
 
@@ -745,7 +761,7 @@ func _show_difficulty(ranked: bool) -> void:
 	intro_margin.add_child(intro_text)
 	var difficulty_grid := GridContainer.new()
 	difficulty_grid.name = "DifficultyGrid"
-	difficulty_grid.columns = 3 if wide else 1
+	difficulty_grid.columns = ResponsiveLayout.responsive_columns(size, 3, 1)
 	difficulty_grid.add_theme_constant_override("h_separation", 16)
 	difficulty_grid.add_theme_constant_override("v_separation", 16)
 	difficulty_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1004,7 +1020,7 @@ func _show_game() -> void:
 		ranked_notice.add_child(ranked_notice_text)
 	var available_width := maxf(content.size.x, size.x - 64.0)
 	var controls_width := clampf(available_width * 0.34, 500.0, 720.0)
-	var side := clampf(minf(size.y * 0.68, available_width - controls_width - 48.0), 440.0, 1120.0) if wide else minf(size.x - 40.0, size.y * 0.54)
+	var side := ResponsiveLayout.game_board_side(size, content.size.x)
 	var board_center := _build_board(side)
 	var controls := _build_game_controls(wide)
 	if wide:
@@ -1133,7 +1149,7 @@ func _build_game_controls(wide: bool) -> PanelContainer:
 	if wide:
 		_add_section_title(controls, _l("操作面板", "Controls"))
 	var tools := GridContainer.new()
-	tools.columns = 2 if wide else 5
+	tools.columns = ResponsiveLayout.responsive_columns(size, 2, 5)
 	tools.add_theme_constant_override("h_separation", 10)
 	tools.add_theme_constant_override("v_separation", 10)
 	controls.add_child(tools)
@@ -1152,7 +1168,7 @@ func _build_game_controls(wide: bool) -> PanelContainer:
 	pause_button.pressed.connect(_toggle_pause)
 	tools.add_child(pause_button)
 	var numpad := GridContainer.new()
-	numpad.columns = (4 if wide else 8) if game_service.session.grid_size == 16 else (3 if wide else 9)
+	numpad.columns = ResponsiveLayout.responsive_columns(size, 4, 8) if game_service.session.grid_size == 16 else ResponsiveLayout.responsive_columns(size, 3, 9)
 	numpad.add_theme_constant_override("h_separation", 8)
 	numpad.add_theme_constant_override("v_separation", 8)
 	controls.add_child(numpad)
@@ -1660,7 +1676,7 @@ func _show_statistics() -> void:
 	_add_section_title(stats_body, _l("进度概览", "Progress Overview"))
 	var stats_grid := GridContainer.new()
 	stats_grid.name = "StatisticsOverviewGrid"
-	stats_grid.columns = 5 if wide else 2
+	stats_grid.columns = ResponsiveLayout.responsive_columns(size, 5, 2)
 	stats_grid.add_theme_constant_override("h_separation", 14)
 	stats_grid.add_theme_constant_override("v_separation", 14)
 	stats_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1676,7 +1692,7 @@ func _show_statistics() -> void:
 	_add_section_title(stats_body, _l("各难度时间纪录", "Time Records by Difficulty"))
 	var best_grid := GridContainer.new()
 	best_grid.name = "StatisticsRecordGrid"
-	best_grid.columns = 3 if wide else 1
+	best_grid.columns = ResponsiveLayout.responsive_columns(size, 3, 1)
 	best_grid.add_theme_constant_override("h_separation", 14)
 	best_grid.add_theme_constant_override("v_separation", 14)
 	best_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1753,7 +1769,7 @@ func _show_settings() -> void:
 	)
 	_add_section_title(preferences_column, _l("游戏与辅助功能", "Gameplay & Accessibility"))
 	var toggle_grid := GridContainer.new()
-	toggle_grid.columns = 2 if wide else 1
+	toggle_grid.columns = ResponsiveLayout.responsive_columns(size, 2, 1)
 	toggle_grid.add_theme_constant_override("h_separation", 12)
 	toggle_grid.add_theme_constant_override("v_separation", 10)
 	toggle_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1820,7 +1836,7 @@ func _show_settings() -> void:
 		shortcut_note.add_theme_color_override("font_color", theme.get_color("muted", "App"))
 		shortcut_column.add_child(shortcut_note)
 		var shortcut_grid := GridContainer.new()
-		shortcut_grid.columns = 2 if wide else 1
+		shortcut_grid.columns = ResponsiveLayout.responsive_columns(size, 2, 1)
 		shortcut_grid.add_theme_constant_override("h_separation", 12)
 		shortcut_grid.add_theme_constant_override("v_separation", 12)
 		shortcut_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1913,13 +1929,13 @@ func _set_leaderboard_difficulty(value: String) -> void:
 
 func _grant_leaderboard_network_and_refresh() -> void:
 	AppState.settings["leaderboard_network_allowed"] = true
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray(["leaderboard_network_allowed"]))
 	_show_leaderboard()
 	_refresh_leaderboard()
 
 func _revoke_leaderboard_network() -> void:
 	AppState.settings["leaderboard_network_allowed"] = false
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray(["leaderboard_network_allowed"]))
 	_show_leaderboard()
 	_show_toast(_l("已撤销排行榜联网权限", "Leaderboard network access revoked"))
 
@@ -2103,19 +2119,18 @@ func _save_name(edit: LineEdit) -> void:
 
 func _set_theme_value(value: String) -> void:
 	AppState.settings["theme"] = value
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray(["theme"]))
 	_show_settings()
 
 func _set_language_value(value: String) -> void:
 	AppState.settings["language"] = value
-	AppState.save_settings()
-	_build_shell_labels()
+	AppState.save_settings(PackedStringArray(["language"]))
 	_show_settings()
 
 func _set_ui_scale_value(value: String) -> void:
 	var scale := snappedf(clampf(value.to_float(), 0.9, 1.1), 0.1)
 	AppState.settings["ui_scale"] = scale
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray(["ui_scale"]))
 	_show_settings()
 
 func _retry_failed_uploads() -> void:
@@ -2230,7 +2245,7 @@ func _close_overlay(overlay: Control) -> void:
 
 func _set_setting(value: bool, key: String) -> void:
 	AppState.settings[key] = value
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray([key]))
 
 func _reset_data() -> void:
 	var overlay := ColorRect.new()
@@ -2707,7 +2722,7 @@ func _add_custom_sound_slot(parent: Container, kind: String, title_text: String,
 	current.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(current)
 	var actions := GridContainer.new()
-	actions.columns = 3 if wide else 1
+	actions.columns = ResponsiveLayout.responsive_columns(size, 3, 1)
 	actions.add_theme_constant_override("h_separation", 10)
 	actions.add_theme_constant_override("v_separation", 10)
 	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2821,7 +2836,7 @@ func _import_custom_sound(source_path: String, dialog: FileDialog, kind: String 
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(previous_path))
 	AppState.settings[_custom_sound_path_key(kind)] = destination_path
 	AppState.settings[_custom_sound_name_key(kind)] = source_path.get_file()
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray([_custom_sound_path_key(kind), _custom_sound_name_key(kind)]))
 	if kind == "button":
 		ui_sounds.reload_custom_sound(destination_path)
 	_show_settings()
@@ -2834,7 +2849,7 @@ func _reset_custom_sound(kind: String = "button") -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(current_path))
 	AppState.settings[_custom_sound_path_key(kind)] = ""
 	AppState.settings[_custom_sound_name_key(kind)] = ""
-	AppState.save_settings()
+	AppState.save_settings(PackedStringArray([_custom_sound_path_key(kind), _custom_sound_name_key(kind)]))
 	if kind == "button":
 		ui_sounds.reload_custom_sound("")
 	_show_settings()

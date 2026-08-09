@@ -21,13 +21,13 @@ This runs:
   class/resource cache before the scripted assertions;
 - `tests/test_runner.gd`: solver, validator, generation samples, unique solutions,
   session serialization, save recovery, background timing, idle-work scheduling,
-  synchronization retry, unchanged-cell repaint suppression, 16×16 and
-  leaderboard transformation/scoring tests;
+  synchronization retry, unchanged-cell repaint suppression, responsive layout,
+  16×16 and leaderboard transformation/scoring tests;
 - `tests/ui_smoke_runner.gd`: the complete responsive UI and ranked-flow smoke pass;
 - `deno test backend/supabase/tests`: server Sudoku validation tests;
 - `deno check` for all three optional Edge Functions.
 
-Current result on 2026-08-09: 101 GDScript assertions, 6 Deno tests and 3 Deno
+Current result on 2026-08-09: 107 GDScript assertions, 6 Deno tests and 3 Deno
 type checks passed with zero failures.
 
 ### Generator stress suite

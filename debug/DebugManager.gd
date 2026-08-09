@@ -183,7 +183,7 @@ func simulate_player_data() -> void:
 	save_manager.call("write_json", "statistics.json", statistics)
 	var event_bus := _event_bus()
 	if event_bus != null:
-		event_bus.emit_signal("settings_changed")
+		event_bus.emit_signal("settings_changed", PackedStringArray())
 	_set_status("已生成 Debug Player 和统计测试数据")
 
 func simulate_leaderboard_data(player_count: int = -1) -> Dictionary:

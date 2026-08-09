@@ -14,6 +14,7 @@ func _run() -> void:
 	_test_save_manager_recovery()
 	_test_background_timing()
 	_test_idle_work_scheduling()
+	_test_responsive_layout()
 	_test_sync_manager_retry()
 	_test_hexadoku()
 	_test_online_leaderboard()
@@ -146,6 +147,16 @@ func _test_idle_work_scheduling() -> void:
 	_assert(not cell.update_state(0, 0, false, false, false, false, false), "an unchanged cell skips redundant repaint work")
 	_assert(cell.update_state(1, 0, false, false, false, false, false), "a changed cell still repaints")
 	cell.free()
+
+func _test_responsive_layout() -> void:
+	var wide_size := Vector2(1500, 900)
+	var narrow_size := Vector2(430, 900)
+	_assert(ResponsiveLayout.is_wide(wide_size) and not ResponsiveLayout.is_wide(narrow_size), "responsive layout separates wide and narrow viewports")
+	_assert(not ResponsiveLayout.is_wide(Vector2(1240, 1200)), "wide layout also requires sufficient aspect ratio")
+	_assert(ResponsiveLayout.shell_side_margin(wide_size) == 28 and ResponsiveLayout.shell_side_margin(narrow_size) == 24, "shell margins follow the shared layout policy")
+	_assert(ResponsiveLayout.shell_max_width(wide_size) == 2440.0 and ResponsiveLayout.shell_max_width(narrow_size) == 1120.0, "shell width caps follow the shared layout policy")
+	_assert(is_equal_approx(ResponsiveLayout.game_board_side(narrow_size, 0.0), 390.0), "compact board size preserves mobile side padding")
+	_assert(ResponsiveLayout.responsive_columns(wide_size, 3, 1) == 3 and ResponsiveLayout.responsive_columns(narrow_size, 3, 1) == 1, "responsive grid columns use the shared breakpoint")
 
 func _test_sync_manager_retry() -> void:
 	var sync: Node = root.get_node("SyncManager")

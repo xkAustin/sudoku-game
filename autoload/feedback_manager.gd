@@ -45,7 +45,9 @@ func play_error_sound() -> void:
 	_error_player.pitch_scale = 1.0
 	_error_player.play()
 
-func reload_custom_sound() -> void:
+func reload_custom_sound(changed_keys: PackedStringArray = PackedStringArray()) -> void:
+	if not changed_keys.is_empty() and "custom_ui_sound_path" not in changed_keys and "custom_error_sound_path" not in changed_keys:
+		return
 	_custom_stream = RuntimeAudioLoaderScript.load_file(str(AppState.settings.get("custom_ui_sound_path", "")))
 	_custom_error_stream = RuntimeAudioLoaderScript.load_file(str(AppState.settings.get("custom_error_sound_path", "")))
 

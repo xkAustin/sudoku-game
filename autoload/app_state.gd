@@ -73,10 +73,10 @@ func clear_session(mode: String, difficulty: int) -> void:
 		_save_timer.stop()
 	SaveManager.write_json(GAMES_FILE, active_games)
 
-func save_settings() -> void:
+func save_settings(changed_keys: PackedStringArray = PackedStringArray()) -> void:
 	SaveManager.write_json(SETTINGS_FILE, settings)
 	_apply_theme()
-	EventBus.settings_changed.emit()
+	EventBus.settings_changed.emit(changed_keys)
 
 func set_display_name(value: String) -> bool:
 	var whitespace := RegEx.new()
@@ -139,7 +139,7 @@ func reset_local_data() -> void:
 	if has_node("/root/SyncManager"):
 		get_node("/root/SyncManager").call("clear_all")
 	_apply_theme()
-	EventBus.settings_changed.emit()
+	EventBus.settings_changed.emit(PackedStringArray())
 	EventBus.session_changed.emit()
 
 func _notification(what: int) -> void:

@@ -44,6 +44,12 @@ func _run() -> void:
 		push_error("UI smoke: idle UI, save debounce and score retry work must not poll every frame")
 		quit(1)
 		return
+	var unchanged_theme: Theme = main.theme
+	main._on_settings_changed(PackedStringArray(["sound"]))
+	if main.theme != unchanged_theme:
+		push_error("UI smoke: non-visual setting changes must not rebuild the application theme")
+		quit(1)
+		return
 	app_state.settings["leaderboard_network_allowed"] = false
 	main._build_shell_labels()
 	main._show_settings()
