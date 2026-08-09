@@ -14,9 +14,11 @@ func _run() -> void:
 	_test_save_manager_recovery()
 	_test_background_timing()
 	_test_idle_work_scheduling()
+	_test_game_service_board_revision()
 	_test_responsive_layout()
 	_test_localization_policy()
 	_test_sync_manager_retry()
+	_test_request_lifecycle()
 	_test_hexadoku()
 	_test_online_leaderboard()
 	print("GDScript tests: %d assertions, %d failures" % [assertions, failures])
@@ -147,7 +149,30 @@ func _test_idle_work_scheduling() -> void:
 	_assert(cell.update_state(0, 0, false, false, false, false, false), "a cell paints its initial state")
 	_assert(not cell.update_state(0, 0, false, false, false, false, false), "an unchanged cell skips redundant repaint work")
 	_assert(cell.update_state(1, 0, false, false, false, false, false), "a changed cell still repaints")
+	var player_style := cell.get_theme_stylebox("normal")
+	_assert(cell.update_state(1, 0, false, true, false, false, false), "selection still repaints a changed cell")
+	_assert(cell.update_state(1, 0, false, false, false, false, false) \
+			and cell.get_theme_stylebox("normal") == player_style, "cell background styles are reused after a state round trip")
 	cell.free()
+
+func _test_game_service_board_revision() -> void:
+	var puzzle := SudokuValidator.string_to_board("530070000600195000098000060800060003400803001700020006060000280000419005000080079")
+	var solution := SudokuSolver.new().solve(puzzle)
+	var service: Node = load("res://core/services/game_service.gd").new()
+	service.session = GameSession.create(puzzle, solution, 1)
+	service.mark_board_dirty()
+	service.selected_index = 2
+	var initial_revision: int = service.board_revision
+	service.select(3)
+	_assert(service.board_revision == initial_revision, "selection does not invalidate board-derived state")
+	service.select(2)
+	service.enter_number(solution[2])
+	_assert(service.board_revision == initial_revision + 1, "number entry invalidates board-derived state")
+	service.undo()
+	_assert(service.board_revision == initial_revision + 2, "undo invalidates board-derived state")
+	service.redo()
+	_assert(service.board_revision == initial_revision + 3, "redo invalidates board-derived state")
+	service.free()
 
 func _test_responsive_layout() -> void:
 	var wide_size := Vector2(1500, 900)
@@ -226,6 +251,59 @@ func _test_sync_manager_retry() -> void:
 	sync._retry_timer.stop()
 	if original_retry_time_left > 0.0:
 		sync._retry_timer.start(original_retry_time_left)
+
+func _test_request_lifecycle() -> void:
+	var supabase_client: Node = root.get_node("SupabaseClient")
+	var data_request := HTTPRequest.new()
+	supabase_client.add_child(data_request)
+	supabase_client._requests["cancel-data-request"] = data_request
+	_assert(supabase_client.cancel_request("cancel-data-request"), "Data API requests can be cancelled")
+	_assert(not supabase_client._requests.has("cancel-data-request") and data_request.is_queued_for_deletion(), "cancelled Data API requests release their node")
+	var data_completions: Array = []
+	var data_callback := func(request_id: String, _success: bool, _data: Variant, _status: int) -> void:
+		data_completions.append(request_id)
+	supabase_client.request_completed.connect(data_callback)
+	supabase_client._on_request_completed(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), PackedByteArray(), "cancel-data-request")
+	_assert(data_completions.is_empty(), "late Data API callbacks are ignored after cancellation")
+	supabase_client.request_completed.disconnect(data_callback)
+
+	var network_manager: Node = root.get_node("NetworkManager")
+	var edge_request := HTTPRequest.new()
+	network_manager.add_child(edge_request)
+	network_manager._requests["cancel-edge-request"] = edge_request
+	_assert(network_manager.cancel_request("cancel-edge-request"), "Edge requests can be cancelled")
+	_assert(not network_manager._requests.has("cancel-edge-request") and edge_request.is_queued_for_deletion(), "cancelled Edge requests release their node")
+	var edge_completions: Array = []
+	var edge_callback := func(request_id: String, _success: bool, _data: Variant, _status: int) -> void:
+		edge_completions.append(request_id)
+	network_manager.request_completed.connect(edge_callback)
+	network_manager._on_request_completed(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), PackedByteArray(), "cancel-edge-request")
+	_assert(edge_completions.is_empty(), "late Edge callbacks are ignored after cancellation")
+	network_manager.request_completed.disconnect(edge_callback)
+
+	var app_state: Node = root.get_node("AppState")
+	var original_network_permission: bool = bool(app_state.settings.get("leaderboard_network_allowed", false))
+	app_state.settings["leaderboard_network_allowed"] = true
+	var leaderboard := OnlineLeaderboard.new()
+	root.add_child(leaderboard)
+	leaderboard._request_id = "existing-leaderboard-request"
+	leaderboard._requested_player_id = "same-player"
+	leaderboard.fetch(0, "same-player")
+	_assert(leaderboard._request_id == "existing-leaderboard-request", "identical in-flight leaderboard requests are reused")
+	app_state.settings["leaderboard_network_allowed"] = false
+	leaderboard.fetch(0, "same-player")
+	_assert(leaderboard._request_id.is_empty(), "revoking leaderboard network access clears its active request")
+	leaderboard.free()
+	app_state.settings["leaderboard_network_allowed"] = original_network_permission
+
+	var challenge_service := RankedChallengeService.new()
+	root.add_child(challenge_service)
+	challenge_service._request_id = "existing-challenge-request"
+	challenge_service._requested_difficulty = 2
+	challenge_service.fetch(2)
+	_assert(challenge_service._request_id == "existing-challenge-request", "identical in-flight challenge requests are reused")
+	challenge_service.cancel_fetch()
+	challenge_service.free()
 
 func _test_hexadoku() -> void:
 	var result := HexadokuGenerator.new().generate(160016)

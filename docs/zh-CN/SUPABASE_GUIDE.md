@@ -58,30 +58,33 @@ UUID 和客户端指标仍可伪造。
 
 部署可选 Edge Functions 前，先应用其私有原子提交 migration：
 
+新项目应先按文件名顺序应用 `backend/supabase/edge_migrations/` 中的全部文件。
+以下命令用于已具备 migration 001–006 的现有 Edge schema 升级。
+
 ```sh
 supabase db query --linked \
-  --file backend/supabase/migrations/007_atomic_edge_submissions.sql
+  --file backend/supabase/edge_migrations/007_atomic_edge_submissions.sql
 supabase db query --linked \
-  --file backend/supabase/migrations/008_edge_service_permissions.sql
+  --file backend/supabase/edge_migrations/008_edge_service_permissions.sql
 supabase db query --linked \
   --file backend/supabase/tests/explain_edge_queries.sql \
   --output json
 supabase db query --linked \
-  --file backend/supabase/migrations/010_edge_query_performance.sql
+  --file backend/supabase/edge_migrations/009_edge_query_performance.sql
 supabase functions deploy \
   get-ranked-challenge submit-score get-leaderboard \
   --workdir backend --use-api
 ./backend/supabase/tests/live_edge_functions.sh
 ```
 
-Migration 008 仅为 Edge 运行时显式授予读取私有表和视图所需的最小权限，
-客户端直连权限仍保持撤销。Migration 007 按安装 ID 加锁，在同一事务内检查
+Edge migration 008 仅为 Edge 运行时显式授予读取私有表和视图所需的最小权限，
+客户端直连权限仍保持撤销。Edge migration 007 按安装 ID 加锁，在同一事务内检查
 滚动一分钟限额并写入已验证成绩。
 Edge 提交处理器还会流式统计实际请求字节，因此缺失或伪造
 `Content-Length` 无法绕过 16 KiB 限制。
 特权 Data API 请求使用 8 秒默认超时；排行榜会并发读取相互独立的 Top 100
 和本人排名。Edge 基准在会话临时表生成 50,000 行，只有当两个索引在目标
-计划中确有收益时才应用 migration 010。使用本地或一次性数据库验证：
+计划中确有收益时才应用 Edge migration 009。使用本地或一次性数据库验证：
 
 ```sh
 psql "$DATABASE_URL" \
@@ -90,6 +93,15 @@ psql "$DATABASE_URL" \
 ```
 
 验证事务会回滚全部测试数据。
+
+部署前使用两个独立的空 PostgreSQL 17 数据库验证两条 migration 链：
+
+```sh
+./backend/supabase/tests/clean_boot.sh
+```
+
+该测试会拒绝重复 migration 版本，重复应用两条 migration 链和 Edge seed 以验证
+幂等性，并验证必需对象、强制 RLS、授权、性能索引和 Edge 原子提交事务。
 
 2026-08-09 部署前基准测得限流查询提升 1.71×、挑战排行榜提升 2.23×。
 部署后，三个函数均为启用 JWT 验证的 `ACTIVE` version 3；无写入线上冒烟

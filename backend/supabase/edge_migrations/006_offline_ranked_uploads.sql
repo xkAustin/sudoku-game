@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema: accept deferred offline ranked uploads.
 alter table public.score_submissions
   add column if not exists source varchar(16) not null default 'online',
   add column if not exists difficulty smallint,

@@ -7,14 +7,28 @@ on:
   schedule:
     - cron: "17 3 * * 1"
 
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
 permissions:
   contents: read
 
 env:
   GODOT_VERSION: "4.7.1"
+  DENO_VERSION: "2.9.5"
   GODOT_LINUX_SHA512: "4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9"
 
 jobs:
+  migration-clean-boot:
+    name: PostgreSQL migration clean boot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Apply both migration chains to disposable databases
+        run: ./backend/supabase/tests/clean_boot.sh
+
   fast:
     name: Godot and Deno
     runs-on: ubuntu-24.04
@@ -23,7 +37,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
-          deno-version: v2.x
+          deno-version: ${{ env.DENO_VERSION }}
       - name: Cache Godot
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -76,8 +90,12 @@ jobs:
           fi
           echo "$engine_dir" >> "$GITHUB_PATH"
       - name: Import and check project
-        run: godot --headless --path . --import
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-stress-import.log --import
+          ./tests/check_godot_log.sh /tmp/sudoku-stress-import.log
       - name: Generate and validate 500 puzzles
         env:
           SUDOKU_STRESS: "1"
-        run: godot --headless --path . --log-file /tmp/sudoku-stress.log --script tests/test_runner.gd
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-stress.log --script tests/test_runner.gd
+          ./tests/check_godot_log.sh /tmp/sudoku-stress.log

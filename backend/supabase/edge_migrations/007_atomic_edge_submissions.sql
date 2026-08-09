@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema: atomic verified submissions.
 alter table public.ranked_challenges
   drop constraint if exists ranked_challenges_puzzle_check;
 alter table public.ranked_challenges

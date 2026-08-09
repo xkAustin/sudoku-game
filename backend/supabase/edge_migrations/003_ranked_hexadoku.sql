@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema: add Hexadoku-compatible constraints.
 alter table public.ranked_challenges
   drop constraint if exists ranked_challenges_difficulty_check,
   drop constraint if exists ranked_challenges_puzzle_check;

@@ -25,7 +25,8 @@ godot --path .
 ```
 
 `run_all.sh` serially executes the core tests, development-mode checks, complete
-UI smoke flow and Deno backend checks, and exits nonzero if any step fails.
+UI smoke flow and Deno backend checks. Its self-tested Godot log checker rejects
+script errors even when Godot returns exit code zero.
 
 Debug runs open the development launcher; press `F12` for the runtime Debug
 panel. See the [Development Mode Guide](DEVELOPMENT_GUIDE.md) for live config

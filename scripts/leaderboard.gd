@@ -8,6 +8,7 @@ const CACHE_FILE := "leaderboard_cache.json"
 const DIFFICULTY_BASES := [1000000, 2000000, 3000000, 5000000, 8000000, 13000000]
 
 var _request_id := ""
+var _requested_player_id := ""
 
 func _ready() -> void:
 	var client := get_node_or_null("/root/SupabaseClient")
@@ -18,15 +19,30 @@ func fetch(_difficulty: int = 0, player_id: String = "") -> void:
 	var app_state := get_node_or_null("/root/AppState")
 	var settings: Dictionary = app_state.get("settings") if app_state != null else {}
 	if not bool(settings.get("leaderboard_network_allowed", false)):
+		cancel_fetch()
 		call_deferred("_emit_cached_or_failed")
 		return
 	var client := get_node_or_null("/root/SupabaseClient")
 	if client == null:
+		cancel_fetch()
 		call_deferred("_emit_cached_or_failed")
 		return
+	if not _request_id.is_empty() and _requested_player_id == player_id:
+		return
+	cancel_fetch()
+	_requested_player_id = player_id
 	_request_id = str(client.call("call_rpc", "get_leaderboard", {
 		"p_player_id": player_id if not player_id.is_empty() else null,
 	}))
+
+func cancel_fetch() -> bool:
+	if _request_id.is_empty():
+		return false
+	var request_id := _request_id
+	_request_id = ""
+	_requested_player_id = ""
+	var client := get_node_or_null("/root/SupabaseClient")
+	return bool(client.call("cancel_request", request_id)) if client != null else false
 
 func cached_snapshot(_difficulty: int = 0) -> Dictionary:
 	var save_manager := get_node_or_null("/root/SaveManager")
@@ -59,6 +75,7 @@ func _on_request_completed(request_id: String, success: bool, data: Variant, _st
 	if request_id != _request_id:
 		return
 	_request_id = ""
+	_requested_player_id = ""
 	if success and data is Dictionary:
 		var snapshot := normalize_snapshot(data)
 		if not snapshot.is_empty():

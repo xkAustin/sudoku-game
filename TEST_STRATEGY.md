@@ -21,14 +21,21 @@ This runs:
   class/resource cache before the scripted assertions;
 - `tests/test_runner.gd`: solver, validator, generation samples, unique solutions,
   session serialization, save recovery, background timing, idle-work scheduling,
-  synchronization retry, unchanged-cell repaint suppression, responsive layout,
-  localization policy, 16×16 and leaderboard transformation/scoring tests;
+  synchronization retry, request cancellation/deduplication, unchanged-cell
+  repaint suppression, responsive layout, localization policy, 16×16 and
+  leaderboard transformation/scoring tests;
 - `tests/ui_smoke_runner.gd`: the complete responsive UI and ranked-flow smoke pass;
+- `tests/test_log_checker.sh`: positive, script-error and missing-log cases for
+  the shared Godot failure-closed log checker;
 - `deno test backend/supabase/tests`: server Sudoku validation, request-body
   limits and Edge leaderboard concurrency tests;
 - `deno check` for all three optional Edge Functions.
 
-Current result on 2026-08-09: 111 GDScript assertions, 7 Deno tests and 3 Deno
+The shared runner also scans every Godot log for script, parse, compile and
+load errors. This prevents Godot's zero process exit code from turning a script
+failure into a false CI pass. The same checker protects stress and export jobs.
+
+Current result on 2026-08-09: 126 GDScript assertions, 7 Deno tests and 3 Deno
 type checks passed with zero failures.
 
 ### Generator stress suite
@@ -41,7 +48,7 @@ For each of the five 9×9 difficulties it generates 100 puzzles and checks board
 legality, solvability, exactly one solution, analyzed difficulty and sample
 variety. The fixed 16×16 checks also run.
 
-Current result on 2026-07-26: 2045 GDScript assertions, zero failures; 2 Deno
+Current result on 2026-08-09: 2086 GDScript assertions, zero failures; 7 Deno
 tests and all 3 type checks also passed.
 
 ### Shared UI flow
@@ -57,7 +64,9 @@ godot --headless --path . \
 Coverage includes wide and narrow layouts, main menu, difficulty selection,
 puzzle generation path, number input, notes, undo/redo, pause, mistake warnings,
 completion, ranked upload choice, secure RPC payload shape, settings, local
-statistics and cached leaderboard display.
+statistics, cached leaderboard display and active-request cancellation when
+leaderboard network permission is revoked. It also verifies that cancelling the
+loading view discards late challenge responses and background generation results.
 
 Current result on 2026-08-09: passed with exit code 0.
 
@@ -65,6 +74,19 @@ Current result on 2026-08-09: passed with exit code 0.
 
 These tests require the ignored `config/client.env` and must use a non-production
 test UUID.
+
+### Disposable migration clean boot
+
+```sh
+./backend/supabase/tests/clean_boot.sh
+```
+
+This local and CI test requires Docker but no Supabase credentials. It rejects
+duplicate version prefixes, applies the supported Data API chain and optional
+Edge chain to separate empty PostgreSQL 17 databases, verifies required objects,
+forced RLS, grants and performance indexes, reapplies both chains and the Edge
+seed to verify idempotency, then runs the atomic Edge submission regression. Its
+container and database rows are disposable.
 
 ### Read-only deployed schema inspection
 
@@ -161,16 +183,22 @@ but they do not convert the three “not run” rows into runtime passes.
 
 ## Continuous integration
 
-`.github/workflows/test.yml` runs fast tests for pushes and pull requests, and
-the stress suite on `main`, manual dispatch and weekly schedule.
+`.github/workflows/test.yml` clean-boots both PostgreSQL migration chains and
+runs fast tests for pushes and pull requests. It runs the stress suite on
+`main`, manual dispatch and the weekly schedule. Deno is pinned to 2.9.5 rather
+than a floating major version.
 
 `.github/workflows/build.yml` caches Godot and export templates and builds
 Android, Linux, Windows, macOS and an unsigned iOS Xcode project. Artifacts are
 kept for 14 days. Release signing is intentionally excluded. All third-party
 Actions are pinned to immutable commits, and downloaded Godot archives are
-verified with the official 4.7.1 SHA-512 values before execution.
+verified with the official 4.7.1 SHA-512 values before execution. Import and
+export logs use the same failure-closed script checker, and both workflows
+cancel obsolete runs for the same branch or pull request.
 
-The workflow YAML files pass local actionlint validation. On 2026-07-26 the
+The changed workflow files pass local YAML parsing; actionlint is not installed
+in this environment, so the current workflow changes still require remote
+GitHub Actions validation. On 2026-07-26 the
 clean-clone GitHub runs passed the fast suite, 500-puzzle stress pass and all
 five platform export jobs. CI creates its own ignored `build/ci/` directories
 and does not depend on committed build outputs.

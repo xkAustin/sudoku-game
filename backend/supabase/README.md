@@ -16,11 +16,16 @@ the server-only service role.
 
 ## Local setup
 
-1. Run `supabase start` from the repository root.
-2. Apply migrations with `supabase db reset`.
-3. Copy `.env.example` to `.env`. Its development pepper matches `seed.sql`.
-4. Serve functions with `supabase functions serve --env-file backend/supabase/.env`.
-5. Copy `config/client.env.example` to the ignored `config/client.env` and set
+1. Run `supabase start --workdir backend` from the repository root.
+2. Apply the supported Data API migrations with
+   `supabase db reset --workdir backend`.
+3. For optional Edge development, apply every SQL file in
+   `backend/supabase/edge_migrations/` in filename order, then explicitly apply
+   `backend/supabase/edge_seed.sql`.
+4. Copy `.env.example` to `.env`. Its development pepper matches
+   `edge_seed.sql`.
+5. Serve functions with `supabase functions serve --env-file backend/supabase/.env`.
+6. Copy `config/client.env.example` to the ignored `config/client.env` and set
    the public project URL and publishable key for a client build.
 
 For production, generate distinct random values of at least 32 bytes for
@@ -48,16 +53,20 @@ after checking the target project's result.
 Only deploy the optional signed-challenge functions when that experimental
 service is intentionally enabled:
 
+On a new project, apply every file in `backend/supabase/edge_migrations/` in
+filename order. The commands below are the upgrade sequence for an existing
+Edge schema that already has migrations 001 through 006.
+
 ```sh
 supabase db query --linked \
-  --file backend/supabase/migrations/007_atomic_edge_submissions.sql
+  --file backend/supabase/edge_migrations/007_atomic_edge_submissions.sql
 supabase db query --linked \
-  --file backend/supabase/migrations/008_edge_service_permissions.sql
+  --file backend/supabase/edge_migrations/008_edge_service_permissions.sql
 supabase db query --linked \
   --file backend/supabase/tests/explain_edge_queries.sql \
   --output json
 supabase db query --linked \
-  --file backend/supabase/migrations/010_edge_query_performance.sql
+  --file backend/supabase/edge_migrations/009_edge_query_performance.sql
 supabase secrets set --env-file backend/supabase/.env
 supabase functions deploy \
   get-ranked-challenge submit-score get-leaderboard \
@@ -65,7 +74,7 @@ supabase functions deploy \
 ./backend/supabase/tests/live_edge_functions.sh
 ```
 
-Migration 008 explicitly gives the Edge runtime only the private table and view
+Edge migration 008 explicitly gives the Edge runtime only the private table and view
 reads it needs; direct client access remains revoked. The three functions
 implement API version v1. Breaking changes should use new
 function names or route dispatch while keeping v1 available to compatible clients.
@@ -98,6 +107,19 @@ psql "$DATABASE_URL" \
 ```
 
 The test rolls back its challenge and score rows.
+
+Before deploying either stack, verify both independent migration chains from an
+empty PostgreSQL 17 database:
+
+```sh
+./backend/supabase/tests/clean_boot.sh
+```
+
+The script rejects duplicate migration versions, starts one disposable
+PostgreSQL container, applies the Data API and optional Edge chains to separate
+empty databases, reapplies both chains and the Edge seed, asserts objects, RLS,
+grants and indexes, runs the atomic Edge submission regression, and removes the
+container.
 
 Neither anonymous path proves ownership of a locally generated UUID. A modified
 client can fabricate plausible metrics or create new UUIDs, so production should

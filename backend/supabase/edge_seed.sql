@@ -1,4 +1,4 @@
--- Local seed uses SOLUTION_HASH_PEPPER=development-only-change-me from .env.example.
+-- Optional Edge local seed uses SOLUTION_HASH_PEPPER=development-only-change-me from .env.example.
 -- Production deployments should rotate the pepper and regenerate this digest.
 insert into public.ranked_challenges (
   difficulty, puzzle, solution_hash, puzzle_version, rules_version,

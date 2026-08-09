@@ -286,6 +286,22 @@ func _run() -> void:
 		return
 	var nine_puzzle := SudokuValidator.string_to_board("530070000600195000098000060800060003400803001700020006060000280000419005000080079")
 	var nine_solution := SudokuSolver.new().solve(nine_puzzle)
+	var session_before_cancel: GameSession = main.game_service.session
+	main._show_loading("Cancellation regression")
+	main._pending_offline_ranked = true
+	main.challenge_service._request_id = "ui-smoke-loading-request"
+	main.challenge_service._requested_difficulty = 1
+	main._cancel_loading()
+	await process_frame
+	main._on_generation_finished({"puzzle": nine_puzzle, "solution": nine_solution, "difficulty": 1})
+	main._on_challenge_received({"puzzle": SudokuValidator.board_to_string(nine_puzzle), "difficulty": 2})
+	await process_frame
+	if main._current_view != "difficulty" or main._pending_offline_ranked \
+			or not main.challenge_service._request_id.is_empty() \
+			or main.game_service.session != session_before_cancel:
+		push_error("UI smoke: cancelled loading should discard late puzzle and challenge results")
+		quit(1)
+		return
 	main.game_service.start_session({"puzzle": nine_puzzle, "solution": nine_solution, "difficulty": 1})
 	main._show_game()
 	await process_frame
@@ -293,10 +309,19 @@ func _run() -> void:
 		push_error("UI smoke: 9x9 board did not refresh clue values")
 		quit(1)
 		return
+	var cached_board_revision: int = main._derived_board_revision
+	main.game_service.select(3)
+	main._refresh_game()
+	if main._derived_board_revision != cached_board_revision \
+			or main.game_service.board_revision != cached_board_revision:
+		push_error("UI smoke: selecting a cell should reuse board-derived state")
+		quit(1)
+		return
 	for column in 9:
 		var row_index := column
 		if row_index != 2 and main.game_service.session.board[row_index] == 0:
 			main.game_service.session.board[row_index] = nine_solution[row_index]
+	main.game_service.mark_board_dirty()
 	main._refresh_game()
 	main.game_service.select(2)
 	main.game_service.enter_number(nine_solution[2])
@@ -379,6 +404,7 @@ func _run() -> void:
 		return
 	var clue_color: Color = main.cell_buttons[0].get_theme_color("font_color")
 	main.game_service.session.board[2] = nine_solution[2]
+	main.game_service.mark_board_dirty()
 	main._refresh_game()
 	var player_color: Color = main.cell_buttons[2].get_theme_color("font_color")
 	if clue_color.is_equal_approx(player_color) or main.cell_buttons[2].get_theme_font_size("font_size") <= main.cell_buttons[0].get_theme_font_size("font_size"):
@@ -388,6 +414,7 @@ func _run() -> void:
 	main.game_service.session.board[2] = 0
 	main.game_service.session.notes[2] = 1 << 4
 	main.game_service.session.notes[3] = (1 << 4) | (1 << 7)
+	main.game_service.mark_board_dirty()
 	main.game_service.select(2)
 	main._refresh_game()
 	if main.cell_buttons[3].highlighted_notes_mask != (1 << 4) or not main.cell_buttons[3].text.is_empty():
@@ -397,6 +424,7 @@ func _run() -> void:
 	for index in nine_solution.size():
 		if nine_solution[index] == 1:
 			main.game_service.session.board[index] = 1
+	main.game_service.mark_board_dirty()
 	main._refresh_game()
 	var completed_number_button := main.number_buttons[1] as Button
 	if main.number_buttons.size() != 9 or not completed_number_button.visible or not completed_number_button.disabled \
@@ -560,6 +588,16 @@ func _run() -> void:
 	var leaderboard_refresh := main.content.find_child("LeaderboardRefreshButton", true, false) as Button
 	if leaderboard_refresh == null or leaderboard_refresh.text != "Allow network & refresh" or not main.leaderboard_service._request_id.is_empty():
 		push_error("UI smoke: leaderboard should remain cache-only until the user grants network access")
+		quit(1)
+		return
+	app_state.settings["leaderboard_network_allowed"] = true
+	main.leaderboard_service._request_id = "ui-smoke-pending-leaderboard"
+	main.leaderboard_service._requested_player_id = "ui-smoke-player"
+	main._revoke_leaderboard_network()
+	await process_frame
+	if bool(app_state.settings.get("leaderboard_network_allowed", true)) \
+			or not main.leaderboard_service._request_id.is_empty():
+		push_error("UI smoke: revoking leaderboard network access should cancel its active request")
 		quit(1)
 		return
 	main._show_leaderboard_snapshot({

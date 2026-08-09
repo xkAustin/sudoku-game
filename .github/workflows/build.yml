@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: builds-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -78,14 +82,18 @@ jobs:
           echo "$engine_dir" >> "$GITHUB_PATH"
 
       - name: Import and check project
-        run: godot --headless --path . --import
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-desktop-import.log --import
+          ./tests/check_godot_log.sh /tmp/sudoku-desktop-import.log
 
       - name: Prepare export directory
         shell: bash
         run: mkdir -p "$(dirname "${{ matrix.output }}")"
 
       - name: Export ${{ matrix.preset }}
-        run: godot --headless --path . --export-debug "${{ matrix.preset }}" "${{ matrix.output }}"
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-desktop-export.log --export-debug "${{ matrix.preset }}" "${{ matrix.output }}"
+          ./tests/check_godot_log.sh /tmp/sudoku-desktop-export.log
 
       - name: Verify ${{ matrix.preset }} artifact
         shell: bash
@@ -160,7 +168,7 @@ jobs:
           settings_dir="$HOME/.config/godot"
           mkdir -p "$settings_dir"
           cat > "$settings_dir/editor_settings-4.7.tres" <<EOF
-          [gd_resource format=3]
+          [gd_resource type="EditorSettings" format=3]
 
           [resource]
           export/android/java_sdk_path = "$JAVA_HOME"
@@ -182,7 +190,9 @@ jobs:
             -validity 10000
 
       - name: Import and check project
-        run: godot --headless --path . --import
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-android-import.log --import
+          ./tests/check_godot_log.sh /tmp/sudoku-android-import.log
 
       - name: Prepare Android export directory
         run: mkdir -p build/ci/android
@@ -192,7 +202,9 @@ jobs:
           GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ runner.temp }}/debug.keystore
           GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
           GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
-        run: godot --headless --path . --export-debug Android build/ci/android/sudoku-game-debug.apk
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-android-export.log --export-debug Android build/ci/android/sudoku-game-debug.apk
+          ./tests/check_godot_log.sh /tmp/sudoku-android-export.log
 
       - name: Verify Android APK
         run: |
@@ -268,7 +280,9 @@ jobs:
           echo "$RUNNER_TEMP/Godot.app/Contents/MacOS" >> "$GITHUB_PATH"
 
       - name: Import and check project
-        run: godot --headless --path . --import
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-apple-import.log --import
+          ./tests/check_godot_log.sh /tmp/sudoku-apple-import.log
 
       - name: Prepare unsigned iOS project export
         if: matrix.preset == 'iOS'
@@ -284,7 +298,9 @@ jobs:
         run: mkdir -p "$(dirname "${{ matrix.output }}")"
 
       - name: Export ${{ matrix.preset }}
-        run: godot --headless --path . --export-debug "${{ matrix.preset }}" "${{ matrix.output }}"
+        run: |
+          godot --headless --path . --log-file /tmp/sudoku-apple-export.log --export-debug "${{ matrix.preset }}" "${{ matrix.output }}"
+          ./tests/check_godot_log.sh /tmp/sudoku-apple-export.log
 
       - name: Verify ${{ matrix.preset }} artifact
         shell: bash

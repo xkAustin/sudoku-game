@@ -1,3 +1,4 @@
+-- Optional signed-challenge Edge schema; apply this chain independently.
 create extension if not exists pgcrypto;
 
 create table if not exists public.ranked_challenges (
