@@ -13,6 +13,7 @@ func _run() -> void:
 	_test_session_roundtrip()
 	_test_save_manager_recovery()
 	_test_background_timing()
+	_test_sync_manager_retry()
 	_test_hexadoku()
 	_test_online_leaderboard()
 	print("GDScript tests: %d assertions, %d failures" % [assertions, failures])
@@ -130,6 +131,63 @@ func _test_background_timing() -> void:
 	service._apply_background_elapsed(2500)
 	_assert(service.session.elapsed_ms == 500, "local games do not count background time")
 	service.free()
+
+func _test_sync_manager_retry() -> void:
+	var sync: Node = root.get_node("SyncManager")
+	var original_queue: Array = sync.queue.duplicate(true)
+	var original_failed_items: Array = sync.failed_items.duplicate(true)
+	var original_active_request: String = sync._active_request
+	var original_retry_at_ms: int = sync._retry_at_ms
+	var original_flush_requested: bool = sync._flush_requested
+	var original_flush_had_failure: bool = sync._flush_had_failure
+	var original_persistence_enabled: bool = sync._persistence_enabled
+	sync._persistence_enabled = false
+	sync.queue = [{"idempotency_key": "transient", "retry_count": 0}]
+	sync._active_request = "transient-request"
+	sync._flush_requested = true
+	var before_retry := Time.get_ticks_msec()
+	sync._on_request_completed("transient-request", false, {}, 503)
+	_assert(sync.queue.size() == 1 and sync.failed_items.is_empty(), "transient upload failures remain pending")
+	_assert(sync._flush_requested and bool(sync.queue[0].get("retry_pending", false)), "transient upload failures keep the flush active")
+	_assert(sync._retry_at_ms > before_retry, "transient upload failures schedule exponential backoff")
+
+	sync._active_request = "rate-limit-request"
+	sync._retry_at_ms = 0
+	var before_rate_limit := Time.get_ticks_msec()
+	sync._on_request_completed("rate-limit-request", false, {}, 429)
+	_assert(sync._retry_at_ms - before_rate_limit >= 29000, "rate-limited uploads wait at least thirty seconds")
+	sync._flush_requested = false
+	sync._on_network_changed(true)
+	_assert(sync._flush_requested and sync._retry_at_ms == 0, "network recovery resumes an explicitly pending upload")
+
+	sync.queue[0]["retry_count"] = 4
+	sync._active_request = "exhausted-request"
+	sync._flush_requested = true
+	sync._on_request_completed("exhausted-request", false, {}, 503)
+	_assert(sync.queue.size() == 1 and not sync._flush_requested, "exhausted transient retries stop without losing the submission")
+	_assert(not sync.queue[0].has("retry_pending"), "exhausted retries do not restart until explicitly requested")
+
+	sync.queue = [{"idempotency_key": "invalid", "retry_count": 0}]
+	sync.failed_items = []
+	sync._active_request = "invalid-request"
+	sync._flush_requested = true
+	sync._on_request_completed("invalid-request", false, {}, 400)
+	_assert(sync.queue.is_empty() and sync.failed_items.size() == 1, "permanent client errors move directly to failed uploads")
+	_assert(not sync._flush_requested, "a permanent failure completes the active flush")
+
+	sync.queue = [{"idempotency_key": "duplicate", "retry_count": 0}]
+	sync.failed_items = []
+	sync._active_request = "duplicate-request"
+	sync._flush_requested = true
+	sync._on_request_completed("duplicate-request", false, {}, 409)
+	_assert(sync.queue.is_empty() and sync.failed_items.is_empty(), "idempotent conflict responses complete successfully")
+	sync.queue = original_queue
+	sync.failed_items = original_failed_items
+	sync._active_request = original_active_request
+	sync._retry_at_ms = original_retry_at_ms
+	sync._flush_requested = original_flush_requested
+	sync._flush_had_failure = original_flush_had_failure
+	sync._persistence_enabled = original_persistence_enabled
 
 func _test_hexadoku() -> void:
 	var result := HexadokuGenerator.new().generate(160016)

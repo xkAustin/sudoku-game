@@ -20,12 +20,13 @@ This runs:
 - a headless Godot editor import, allowing a fresh clone to build its global
   class/resource cache before the scripted assertions;
 - `tests/test_runner.gd`: solver, validator, generation samples, unique solutions,
-  session serialization, save recovery, background timing, 16×16 and leaderboard
-  transformation/scoring tests;
+  session serialization, save recovery, background timing, synchronization retry,
+  16×16 and leaderboard transformation/scoring tests;
+- `tests/ui_smoke_runner.gd`: the complete responsive UI and ranked-flow smoke pass;
 - `deno test backend/supabase/tests`: server Sudoku validation tests;
 - `deno check` for all three optional Edge Functions.
 
-Current result on 2026-07-26: 85 GDScript assertions, 2 Deno tests and 3 Deno
+Current result on 2026-08-09: 95 GDScript assertions, 6 Deno tests and 3 Deno
 type checks passed with zero failures.
 
 ### Generator stress suite
@@ -43,6 +44,8 @@ tests and all 3 type checks also passed.
 
 ### Shared UI flow
 
+This flow runs as part of `./tests/run_all.sh`. To execute it independently:
+
 ```sh
 godot --headless --path . \
   --log-file /tmp/sudoku-ui-smoke.log \
@@ -54,7 +57,7 @@ puzzle generation path, number input, notes, undo/redo, pause, mistake warnings,
 completion, ranked upload choice, secure RPC payload shape, settings, local
 statistics and cached leaderboard display.
 
-Current result on 2026-07-26: passed with exit code 0.
+Current result on 2026-08-09: passed with exit code 0.
 
 ## Supabase security and integration
 

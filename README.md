@@ -151,8 +151,8 @@ Run the fast suite:
 
 The script performs the required headless Godot import first, so it also works
 in a fresh clone with no `.godot` cache. It exits nonzero on any GDScript,
-Sudoku, serialization, Deno test or TypeScript failure. GitHub Actions runs this
-fast suite on each push and pull request. Run the
+Sudoku, serialization, debug smoke, shared UI smoke, Deno test or TypeScript
+failure. GitHub Actions runs this complete fast suite on each push and pull request. Run the
 100-puzzles-per-difficulty stress pass locally with:
 
 ```sh
@@ -160,7 +160,7 @@ SUDOKU_STRESS=1 ./tests/run_all.sh
 ```
 
 Stress checks legality, solvability, uniqueness, analyzed difficulty and variety.
-Run the shared UI flow with:
+The shared UI flow is part of the fast suite. To run it independently, use:
 
 ```sh
 godot --headless --path . \

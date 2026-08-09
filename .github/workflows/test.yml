@@ -43,7 +43,7 @@ jobs:
             install -m 0755 "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" "$engine_dir/godot"
           fi
           echo "$engine_dir" >> "$GITHUB_PATH"
-      - name: Run fast suite
+      - name: Run fast suite including UI smoke
         run: ./tests/run_all.sh
 
   stress:

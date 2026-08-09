@@ -2,6 +2,7 @@ extends Node
 
 const QUEUE_FILE := "pending_submissions.json"
 const MAX_RETRIES := 5
+const TRANSIENT_CLIENT_STATUS_CODES := [408, 425, 429]
 
 signal flush_completed(success: bool)
 
@@ -10,6 +11,8 @@ var failed_items: Array = []
 var _active_request := ""
 var _retry_at_ms := 0
 var _flush_requested := false
+var _flush_had_failure := false
+var _persistence_enabled := true
 
 func _ready() -> void:
 	var saved: Variant = SaveManager.read_json(QUEUE_FILE, {"data_version": 2, "items": [], "failed_items": []})
@@ -32,6 +35,8 @@ func _ready() -> void:
 		_save()
 	else:
 		EventBus.pending_count_changed.emit(queue.size())
+	if not queue.is_empty() and bool(queue[0].get("retry_pending", false)) and NetworkManager.online and AppConfig.online_configured():
+		_flush_requested = true
 	set_process(true)
 
 func _process(_delta: float) -> void:
@@ -87,17 +92,25 @@ func clear_all() -> void:
 	_active_request = ""
 	_retry_at_ms = 0
 	_flush_requested = false
-	SaveManager.remove_json(QUEUE_FILE)
+	_flush_had_failure = false
+	if _persistence_enabled:
+		SaveManager.remove_json(QUEUE_FILE)
 	EventBus.pending_count_changed.emit(0)
 
 func flush_now() -> void:
 	if queue.is_empty():
 		call_deferred("_finish_flush", true)
 		return
-	if not NetworkManager.online or not AppConfig.online_configured():
-		call_deferred("_finish_flush", false)
-		return
 	_flush_requested = true
+	_flush_had_failure = false
+	var item: Dictionary = queue[0]
+	if int(item.get("retry_count", 0)) >= MAX_RETRIES:
+		item["retry_count"] = 0
+	item["retry_pending"] = true
+	_save()
+	if not NetworkManager.online or not AppConfig.online_configured():
+		call_deferred("_notify_flush", false)
+		return
 	_retry_at_ms = 0
 
 func _submit_front() -> void:
@@ -116,7 +129,7 @@ func _rpc_payload(submission: Dictionary) -> Dictionary:
 		"p_submission_id": str(submission.get("idempotency_key", "")),
 	}
 
-func _on_request_completed(request_id: String, success: bool, data: Variant, status_code: int) -> void:
+func _on_request_completed(request_id: String, success: bool, _data: Variant, status_code: int) -> void:
 	if request_id != _active_request:
 		return
 	_active_request = ""
@@ -125,35 +138,58 @@ func _on_request_completed(request_id: String, success: bool, data: Variant, sta
 	if success or status_code == 409:
 		queue.pop_front()
 		_retry_at_ms = 0
+		if not queue.is_empty():
+			queue[0]["retry_pending"] = true
 		_save()
 		if queue.is_empty():
-			_finish_flush(true)
+			_finish_flush(not _flush_had_failure)
 		return
 	var item: Dictionary = queue[0]
 	item["retry_count"] = int(item.get("retry_count", 0)) + 1
-	if int(item["retry_count"]) >= MAX_RETRIES and status_code >= 400 and status_code < 500:
+	if _is_permanent_client_error(status_code):
 		item["failed_permanently"] = true
+		item.erase("retry_pending")
 		queue.pop_front()
 		item["failed_at"] = Time.get_datetime_string_from_system(true)
 		failed_items.append(item)
+		_flush_had_failure = true
 		_retry_at_ms = 0
-	else:
-		var delay_seconds := mini(60, 1 << mini(int(item["retry_count"]), 6))
-		_retry_at_ms = Time.get_ticks_msec() + delay_seconds * 1000
-	_save()
-	if _flush_requested:
+		if not queue.is_empty():
+			queue[0]["retry_pending"] = true
+		_save()
+		if queue.is_empty():
+			_finish_flush(false)
+		return
+	if int(item["retry_count"]) >= MAX_RETRIES:
+		item.erase("retry_pending")
+		_retry_at_ms = 0
+		_save()
 		_finish_flush(false)
+		return
+	item["retry_pending"] = true
+	var delay_seconds := 30 if status_code == 429 else mini(60, 1 << mini(int(item["retry_count"]), 6))
+	_retry_at_ms = Time.get_ticks_msec() + delay_seconds * 1000
+	_save()
 
 func _on_network_changed(value: bool) -> void:
-	if value:
+	if value and not queue.is_empty() and bool(queue[0].get("retry_pending", false)):
+		_flush_requested = true
 		_retry_at_ms = 0
+
+func _is_permanent_client_error(status_code: int) -> bool:
+	return status_code >= 400 and status_code < 500 and status_code not in TRANSIENT_CLIENT_STATUS_CODES and status_code != 409
 
 func _finish_flush(success: bool) -> void:
 	_flush_requested = false
+	_retry_at_ms = 0
+	flush_completed.emit(success)
+
+func _notify_flush(success: bool) -> void:
 	flush_completed.emit(success)
 
 func _save() -> void:
-	SaveManager.write_json(QUEUE_FILE, {"data_version": 2, "items": queue, "failed_items": failed_items})
+	if _persistence_enabled:
+		SaveManager.write_json(QUEUE_FILE, {"data_version": 2, "items": queue, "failed_items": failed_items})
 	EventBus.pending_count_changed.emit(queue.size())
 
 func _uuid_v4() -> String:
