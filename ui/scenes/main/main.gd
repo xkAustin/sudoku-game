@@ -128,6 +128,8 @@ var _ranked_result_session: GameSession
 var _ranked_upload_state := ""
 var _leaderboard_refresh_after_sync := false
 var _sound_customization_tween: Tween
+var _timer_refresh: Timer
+var _last_timer_text := ""
 
 func _ready() -> void:
 	_ensure_shortcut_settings()
@@ -136,6 +138,11 @@ func _ready() -> void:
 	add_child(challenge_service)
 	add_child(leaderboard_service)
 	add_child(ui_sounds)
+	_timer_refresh = Timer.new()
+	_timer_refresh.wait_time = 1.0
+	_timer_refresh.timeout.connect(_refresh_timer_label)
+	add_child(_timer_refresh)
+	_timer_refresh.start()
 	game_service.generation_finished.connect(_on_generation_finished)
 	game_service.generation_failed.connect(_on_generation_failed)
 	game_service.completed.connect(_on_game_completed)
@@ -160,11 +167,13 @@ func _ready() -> void:
 	_update_shell_width()
 	_apply_theme()
 	_show_menu()
-	set_process(true)
 
-func _process(_delta: float) -> void:
+func _refresh_timer_label() -> void:
 	if timer_label != null and is_instance_valid(timer_label) and game_service.session != null:
-		timer_label.text = _format_time(game_service.session.elapsed_ms) if bool(AppState.settings.get("show_timer", true)) else _l("计时已隐藏", "Timer hidden")
+		var next_text := _format_time(game_service.session.elapsed_ms) if bool(AppState.settings.get("show_timer", true)) else _l("计时已隐藏", "Timer hidden")
+		if next_text != _last_timer_text:
+			timer_label.text = next_text
+			_last_timer_text = next_text
 
 # Debug 专用：为独立开发入口提供稳定的页面导航适配层，不暴露更多 UI 内部实现。
 func debug_open_view(destination: String) -> void:
@@ -420,6 +429,9 @@ func _apply_theme() -> void:
 		material.set_shader_parameter("bottom_color", Color("102b49") if dark else Color("dcecff"))
 		material.set_shader_parameter("glow_a", Color(0.20, 0.72, 1.0, 0.34 if dark else 0.22))
 		material.set_shader_parameter("glow_b", Color(0.56, 0.38, 1.0, 0.25 if dark else 0.14))
+	for cell in cell_buttons:
+		if is_instance_valid(cell):
+			cell.refresh_theme()
 
 func _configure_initial_window() -> void:
 	if OS.has_feature("mobile"):
@@ -1169,12 +1181,13 @@ func _refresh_game() -> void:
 	var auto_check := game_service.effective_setting("auto_check", true)
 	var highlight_same := game_service.effective_setting("highlight_same", true)
 	var highlighted_note_values := ((1 << selected_value) if selected_value != 0 else selected_notes) if highlight_same else 0
+	var highlight_related := game_service.effective_setting("highlight_related", true)
+	var selected_row := selected / grid_size if selected >= 0 else -1
+	var selected_column := selected % grid_size if selected >= 0 else -1
 	var conflicts: Variant = (SudokuValidator.conflicts(game_service.session.board) if grid_size == 9 else GridSolver.new(grid_size, box_size).conflicts(game_service.session.board)) if auto_check else {}
 	for index in mini(game_service.session.board.size(), cell_buttons.size()):
 		var row := index / grid_size
 		var column := index % grid_size
-		var selected_row := selected / grid_size if selected >= 0 else -1
-		var selected_column := selected % grid_size if selected >= 0 else -1
 		var related := row == selected_row or column == selected_column or (row / box_size == selected_row / box_size and column / box_size == selected_column / box_size)
 		var value := game_service.session.board[index]
 		cell_buttons[index].disabled = game_service.paused
@@ -1184,7 +1197,7 @@ func _refresh_game() -> void:
 			notes,
 			game_service.session.is_clue(index),
 			index == selected,
-			related and game_service.effective_setting("highlight_related", true),
+			related and highlight_related,
 			selected_value != 0 and value == selected_value and highlight_same,
 			auto_check and conflicts.has(index),
 			notes & highlighted_note_values
@@ -1207,7 +1220,7 @@ func _refresh_game() -> void:
 			number_button.mouse_filter = Control.MOUSE_FILTER_IGNORE if completed_value else Control.MOUSE_FILTER_STOP
 			number_button.theme_type_variation = "NumberPadPlaceholder" if completed_value else "NumberPadButton"
 	if timer_label != null:
-		timer_label.text = _format_time(game_service.session.elapsed_ms)
+		_refresh_timer_label()
 	if mistakes_label != null:
 		var show_mistakes := game_service.effective_setting("show_mistakes", true)
 		var mistake_count := game_service.session.mistakes
@@ -2866,6 +2879,7 @@ func _clear_content() -> void:
 	for child in content.get_children():
 		child.queue_free()
 	timer_label = null
+	_last_timer_text = ""
 	mistakes_label = null
 	notes_button = null
 	pause_button = null

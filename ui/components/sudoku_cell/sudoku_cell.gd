@@ -14,6 +14,7 @@ var grid_size := 9
 var box_size := 3
 var completion_glow := 0.0
 var completion_pulse_count := 0
+var _state_initialized := false
 
 func configure(index: int, size_value: int = 9, box_value: int = 3) -> void:
 	cell_index = index
@@ -22,8 +23,11 @@ func configure(index: int, size_value: int = 9, box_value: int = 3) -> void:
 	custom_minimum_size = Vector2(30, 30) if grid_size == 16 else Vector2(48, 48)
 	focus_mode = Control.FOCUS_ALL
 	clip_text = true
+	_state_initialized = false
 
-func update_state(value: int, notes: int, is_clue: bool, is_selected: bool, is_related: bool, is_same: bool, is_conflict: bool, note_highlights: int = 0) -> void:
+func update_state(value: int, notes: int, is_clue: bool, is_selected: bool, is_related: bool, is_same: bool, is_conflict: bool, note_highlights: int = 0) -> bool:
+	if _state_initialized and cell_value == value and notes_mask == notes and clue == is_clue and selected == is_selected and related == is_related and same_value == is_same and conflict == is_conflict and highlighted_notes_mask == note_highlights:
+		return false
 	clue = is_clue
 	cell_value = value
 	notes_mask = notes
@@ -37,6 +41,14 @@ func update_state(value: int, notes: int, is_clue: bool, is_selected: bool, is_r
 	text = value_label(value) if value != 0 else ""
 	tooltip_text = ""
 	_apply_background(value)
+	queue_redraw()
+	_state_initialized = true
+	return true
+
+func refresh_theme() -> void:
+	if not _state_initialized:
+		return
+	_apply_background(cell_value)
 	queue_redraw()
 
 func _draw() -> void:

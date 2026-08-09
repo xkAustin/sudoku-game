@@ -13,6 +13,7 @@ func _run() -> void:
 	_test_session_roundtrip()
 	_test_save_manager_recovery()
 	_test_background_timing()
+	_test_idle_work_scheduling()
 	_test_sync_manager_retry()
 	_test_hexadoku()
 	_test_online_leaderboard()
@@ -132,6 +133,20 @@ func _test_background_timing() -> void:
 	_assert(service.session.elapsed_ms == 500, "local games do not count background time")
 	service.free()
 
+func _test_idle_work_scheduling() -> void:
+	var app_state: Node = root.get_node("AppState")
+	var sync: Node = root.get_node("SyncManager")
+	_assert(not app_state.is_processing() and app_state._save_timer is Timer, "session saves use a timer instead of per-frame polling")
+	_assert(app_state._save_timer.one_shot and is_equal_approx(app_state._save_timer.wait_time, 0.6), "session save debounce keeps its six-hundred-millisecond delay")
+	_assert(not sync.is_processing() and sync._retry_timer is Timer and sync._retry_timer.one_shot, "score retries use a one-shot timer instead of per-frame polling")
+	var cell := SudokuCellButton.new()
+	root.add_child(cell)
+	cell.configure(0, 16, 4)
+	_assert(cell.update_state(0, 0, false, false, false, false, false), "a cell paints its initial state")
+	_assert(not cell.update_state(0, 0, false, false, false, false, false), "an unchanged cell skips redundant repaint work")
+	_assert(cell.update_state(1, 0, false, false, false, false, false), "a changed cell still repaints")
+	cell.free()
+
 func _test_sync_manager_retry() -> void:
 	var sync: Node = root.get_node("SyncManager")
 	var original_queue: Array = sync.queue.duplicate(true)
@@ -141,6 +156,8 @@ func _test_sync_manager_retry() -> void:
 	var original_flush_requested: bool = sync._flush_requested
 	var original_flush_had_failure: bool = sync._flush_had_failure
 	var original_persistence_enabled: bool = sync._persistence_enabled
+	var original_retry_time_left: float = sync._retry_timer.time_left
+	sync._retry_timer.stop()
 	sync._persistence_enabled = false
 	sync.queue = [{"idempotency_key": "transient", "retry_count": 0}]
 	sync._active_request = "transient-request"
@@ -188,6 +205,9 @@ func _test_sync_manager_retry() -> void:
 	sync._flush_requested = original_flush_requested
 	sync._flush_had_failure = original_flush_had_failure
 	sync._persistence_enabled = original_persistence_enabled
+	sync._retry_timer.stop()
+	if original_retry_time_left > 0.0:
+		sync._retry_timer.start(original_retry_time_left)
 
 func _test_hexadoku() -> void:
 	var result := HexadokuGenerator.new().generate(160016)

@@ -40,6 +40,10 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	var app_state := root.get_node("AppState")
+	if main.is_processing() or app_state.is_processing() or sync_manager.is_processing():
+		push_error("UI smoke: idle UI, save debounce and score retry work must not poll every frame")
+		quit(1)
+		return
 	app_state.settings["leaderboard_network_allowed"] = false
 	main._build_shell_labels()
 	main._show_settings()

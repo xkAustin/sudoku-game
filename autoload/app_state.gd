@@ -21,9 +21,14 @@ var statistics: Dictionary = {}
 var active_games: Dictionary = {}
 var installation_id := ""
 var current_session: GameSession
-var _save_due_ms := 0
+var _save_timer: Timer
 
 func _ready() -> void:
+	_save_timer = Timer.new()
+	_save_timer.one_shot = true
+	_save_timer.wait_time = 0.6
+	_save_timer.timeout.connect(save_session_now)
+	add_child(_save_timer)
 	settings = SaveManager.read_json(SETTINGS_FILE, _default_settings())
 	profile = SaveManager.read_json(PROFILE_FILE, {"data_version": 1, "display_name": "Player"})
 	statistics = SaveManager.read_json(STATS_FILE, _default_statistics())
@@ -37,20 +42,17 @@ func _ready() -> void:
 		SaveManager.write_json(INSTALLATION_FILE, {"data_version": 1, "installation_id": installation_id})
 	_apply_theme()
 
-func _process(_delta: float) -> void:
-	if _save_due_ms > 0 and Time.get_ticks_msec() >= _save_due_ms:
-		_save_due_ms = 0
-		save_session_now()
-
 func set_session(session: GameSession) -> void:
 	current_session = session
 	EventBus.session_changed.emit()
 	request_save()
 
 func request_save() -> void:
-	_save_due_ms = Time.get_ticks_msec() + 600
+	_save_timer.start()
 
 func save_session_now() -> void:
+	if _save_timer != null and not _save_timer.is_stopped():
+		_save_timer.stop()
 	if current_session == null:
 		return
 	var key := current_session.mode + "_" + str(current_session.difficulty)
@@ -68,7 +70,7 @@ func clear_session(mode: String, difficulty: int) -> void:
 	active_games.get("games", {}).erase(mode + "_" + str(difficulty))
 	if current_session != null and current_session.mode == mode and current_session.difficulty == difficulty:
 		current_session = null
-		_save_due_ms = 0
+		_save_timer.stop()
 	SaveManager.write_json(GAMES_FILE, active_games)
 
 func save_settings() -> void:
@@ -129,7 +131,7 @@ func reset_local_data() -> void:
 	statistics = _default_statistics()
 	active_games = {"data_version": 1, "games": {}}
 	current_session = null
-	_save_due_ms = 0
+	_save_timer.stop()
 	SaveManager.write_json(SETTINGS_FILE, settings)
 	SaveManager.write_json(PROFILE_FILE, profile)
 	SaveManager.write_json(STATS_FILE, statistics)
