@@ -168,7 +168,7 @@ jobs:
           settings_dir="$HOME/.config/godot"
           mkdir -p "$settings_dir"
           cat > "$settings_dir/editor_settings-4.7.tres" <<EOF
-          [gd_resource format=3]
+          [gd_resource type="EditorSettings" format=3]
 
           [resource]
           export/android/java_sdk_path = "$JAVA_HOME"
