@@ -34,7 +34,16 @@ Deploy the supported Data API migration with:
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db query --linked \
   --file backend/supabase/migrations/006_data_api_scores.sql
+supabase db query --linked \
+  --file backend/supabase/tests/explain_leaderboard_queries.sql \
+  --output json
+supabase db query --linked \
+  --file backend/supabase/migrations/009_data_api_leaderboard_performance.sql
 ```
+
+The benchmark uses 20,000 session-local rows and returns both old and candidate
+plans without writing production leaderboard data. Apply migration 009 only
+after checking the target project's result.
 
 Only deploy the optional signed-challenge functions when that experimental
 service is intentionally enabled:
@@ -44,10 +53,16 @@ supabase db query --linked \
   --file backend/supabase/migrations/007_atomic_edge_submissions.sql
 supabase db query --linked \
   --file backend/supabase/migrations/008_edge_service_permissions.sql
+supabase db query --linked \
+  --file backend/supabase/tests/explain_edge_queries.sql \
+  --output json
+supabase db query --linked \
+  --file backend/supabase/migrations/010_edge_query_performance.sql
 supabase secrets set --env-file backend/supabase/.env
-supabase functions deploy get-ranked-challenge
-supabase functions deploy submit-score
-supabase functions deploy get-leaderboard
+supabase functions deploy \
+  get-ranked-challenge submit-score get-leaderboard \
+  --workdir backend --use-api
+./backend/supabase/tests/live_edge_functions.sh
 ```
 
 Migration 008 explicitly gives the Edge runtime only the private table and view
@@ -69,7 +84,9 @@ most ten distinct submissions per player UUID per minute. The optional
 signed-challenge submit function separately applies a per-installation rolling
 limit in the same database transaction as the insert. It streams and counts the
 actual request bytes before parsing, so a missing or false `Content-Length`
-cannot bypass the hard 16 KiB request-size limit.
+cannot bypass the hard 16 KiB request-size limit. Privileged Data API requests
+have an eight-second default timeout. The Edge leaderboard runs its independent
+Top 100 and own-rank reads concurrently.
 
 Verify the optional Edge submission transaction against a disposable or local
 database after applying all migrations:

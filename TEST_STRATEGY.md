@@ -78,6 +78,21 @@ It reports table columns, indexes, forced-RLS flags, anonymous table privileges,
 RPC signatures, `SECURITY DEFINER` state and client function grants as one JSON
 record.
 
+### Query-plan benchmarks
+
+```sh
+supabase db query --linked \
+  --file backend/supabase/tests/explain_leaderboard_queries.sql \
+  --output json
+supabase db query --linked \
+  --file backend/supabase/tests/explain_edge_queries.sql \
+  --output json
+```
+
+Both scripts create representative rows and candidate indexes only in
+`pg_temp`, run real `EXPLAIN (ANALYZE, BUFFERS)` plans on the linked PostgreSQL
+version, and leave production tables unchanged.
+
 ### Anonymous REST/RLS flow
 
 ```sh
@@ -94,6 +109,16 @@ Assertions:
 - direct table select/insert/update/delete are rejected;
 - leaderboard RPC returns Top 100 and the caller's rank without player UUIDs;
 - the eleventh distinct submission in one minute is rejected.
+
+### Optional Edge Function smoke
+
+```sh
+./backend/supabase/tests/live_edge_functions.sh
+```
+
+This no-write smoke verifies JWT rejection, leaderboard availability, the
+active-or-empty challenge response and invalid-submission rejection against the
+deployed functions.
 
 ### Godot HTTPS flow
 
@@ -112,6 +137,11 @@ runner now requires the exact server-calculated score, `updated == true` and
 pass. An administrator must delete each printed test UUID from
 `score_submission_guards` and `scores`. The 2026-07-26 verification did so and
 confirmed zero residual QA rows.
+
+The 2026-08-09 verification also confirmed migrations 009 and 010, all three
+Edge Functions `ACTIVE` at version 3 with JWT verification enabled, the required
+server secret names, both deployed performance indexes, and zero residual rows
+for the exact Data API test UUID.
 
 ## Build verification
 

@@ -21,10 +21,11 @@ loader also accepts the same process environment variables and supports
 
 ## Deploy the database
 
-The authoritative migration is:
+The supported base migration and its measured performance upgrade are:
 
 ```text
 backend/supabase/migrations/006_data_api_scores.sql
+backend/supabase/migrations/009_data_api_leaderboard_performance.sql
 ```
 
 It can be pasted into the target project's SQL Editor, or deployed with Supabase
@@ -35,10 +36,16 @@ supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db query --linked \
   --file backend/supabase/migrations/006_data_api_scores.sql
+supabase db query --linked \
+  --file backend/supabase/tests/explain_leaderboard_queries.sql \
+  --output json
+supabase db query --linked \
+  --file backend/supabase/migrations/009_data_api_leaderboard_performance.sql
 ```
 
-The SQL is idempotent and can be rerun when upgrading an earlier version of this
-leaderboard. The CLI link cache under `supabase/.temp/` is ignored by Git.
+Both migrations are idempotent. Run the temporary-table plan benchmark before
+applying migration 009 so the optimization remains evidence-based for the target
+PostgreSQL version. The CLI link cache under `supabase/.temp/` is ignored by Git.
 
 The migration creates:
 
@@ -80,7 +87,10 @@ The client sends raw ranked-session metrics and an idempotency UUID to
 - updates a row only when the new score is higher.
 
 `get_leaderboard` returns the global Top 100 and the requested player's exact
-position without exposing player UUIDs in leaderboard rows.
+position without exposing player UUIDs in leaderboard rows. Migration 009 stops
+materializing the complete ranked row set: the Top 100 streams from
+`scores_global_rank`, and the requested player's position is counted against
+their indexed score row.
 
 ## Score calculation
 
@@ -113,6 +123,21 @@ Run the repeatable anonymous Data API check:
 ```sh
 ./backend/supabase/tests/live_data_api.sh
 ```
+
+Measure the Data API and optional Edge query plans without writing benchmark
+rows to production tables:
+
+```sh
+supabase db query --linked \
+  --file backend/supabase/tests/explain_leaderboard_queries.sql \
+  --output json
+supabase db query --linked \
+  --file backend/supabase/tests/explain_edge_queries.sql \
+  --output json
+```
+
+The scripts create representative data only in `pg_temp`; all helpers, rows and
+indexes disappear when the query session ends.
 
 It verifies a valid bounded score, idempotent replay, lower-score preservation,
 higher-score replacement, invalid difficulty/duration/hint/move rejection,
@@ -173,6 +198,32 @@ commit on 2026-07-26 and returned the same table, function, grant, index, policy
 and trigger inventory. A final name-pattern/orphan check found zero suspected
 Codex/test/QA score rows and zero orphan submission-guard rows.
 
+### Performance and optional Edge deployment — 2026-08-09
+
+Migrations 009 and 010 were applied to the same healthy hosted PostgreSQL 17
+project after real `EXPLAIN (ANALYZE, BUFFERS)` comparisons on session-local
+representative data:
+
+- Data API leaderboard, 20,000 rows: worst-ranked player improved from
+  47.256 ms to 8.843 ms (5.34×), and best-ranked player improved from
+  38.278 ms to 0.877 ms (43.65×). The candidate plan eliminated 181 temporary
+  write blocks.
+- Optional Edge history, 50,000 rows: the rolling rate-limit lookup improved
+  from 0.137 ms to 0.080 ms (1.71×), while the challenge leaderboard improved
+  from 10.102 ms to 4.522 ms (2.23×) and changed to an index-only scan.
+- A post-migration rerun confirmed both production indexes exist and retained
+  the intended plan shape.
+- The complete Data API live check passed, including RPC compatibility, forced
+  RLS, direct-access denial, idempotency and rate limiting. Its one score row and
+  one guard row were deleted by exact UUID and the cleanup returned one row for
+  each table.
+- `get-ranked-challenge`, `submit-score` and `get-leaderboard` were deployed as
+  version 3. All three are `ACTIVE` with JWT verification enabled and all
+  required server secret names present.
+- Live Edge smoke passed: unauthenticated access returned HTTP 401,
+  `get-leaderboard` returned HTTP 200, the empty challenge state returned the
+  expected HTTP 404, and an invalid submission returned HTTP 400.
+
 ## Remaining security limit
 
 This is basic hardening for a casual anonymous leaderboard, not proof of gameplay.
@@ -191,6 +242,13 @@ per-installation rolling limit and verified score insert one locked transaction.
 Apply `backend/supabase/migrations/008_edge_service_permissions.sql` as well; it
 grants the Edge runtime only the private table and view reads those functions
 need while keeping direct client access revoked.
+Before deploying the functions, run the temporary Edge plan benchmark and apply
+`backend/supabase/migrations/010_edge_query_performance.sql`; it adds the two
+measured lookup indexes without expanding privileges.
 The submit function also counts streamed request bytes instead of trusting the
-`Content-Length` header. A disposable-database regression check is available at
-`backend/supabase/tests/test_atomic_edge_submissions.sql`.
+`Content-Length` header. Privileged Data API requests have an eight-second
+default timeout, and the leaderboard loads its independent Top 100 and own-rank
+queries concurrently. A disposable-database regression check is available at
+`backend/supabase/tests/test_atomic_edge_submissions.sql`; deployed functions
+can be checked without writing rows using
+`backend/supabase/tests/live_edge_functions.sh`.
