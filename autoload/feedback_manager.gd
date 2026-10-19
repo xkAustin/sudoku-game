@@ -51,9 +51,6 @@ func reload_custom_sound(changed_keys: PackedStringArray = PackedStringArray()) 
 	_custom_stream = RuntimeAudioLoaderScript.load_file(str(AppState.settings.get("custom_ui_sound_path", "")))
 	_custom_error_stream = RuntimeAudioLoaderScript.load_file(str(AppState.settings.get("custom_error_sound_path", "")))
 
-func has_custom_error_stream() -> bool:
-	return _custom_error_stream != null
-
 func is_error_player_active() -> bool:
 	return _error_player.playing
 

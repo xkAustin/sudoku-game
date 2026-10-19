@@ -8,6 +8,10 @@ This GitHub repository contains source code, assets, tests, backend migrations,
 documentation and reproducible build workflows. It does not track generated
 applications or installers on the default branch.
 
+Themes are built at runtime by `ui/themes/theme_manager.gd`. Uniqueness checks
+use the solvers' solution-counting methods in `core/sudoku/` directly.
+`assets/app_icons/` contains source artwork and icons required by platform exports.
+
 ## Option A: download a release
 
 Use [GitHub Releases](https://github.com/xkAustin/sudoku-game/releases) when a

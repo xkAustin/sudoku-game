@@ -7,6 +7,10 @@ macOS、Windows 和 Linux。无需账号，无广告或追踪 SDK；网络仅用
 本 GitHub 仓库保存源码、assets、测试、后端 migration、技术文档和可复现
 构建流程；默认分支不追踪生成的应用程序或安装包。
 
+主题由 `ui/themes/theme_manager.gd` 在运行时构建；唯一解检查直接使用
+`core/sudoku/` 中求解器的解数量接口。`assets/app_icons/` 保存图标源图和
+各平台导出所需的图标资源。
+
 ## 方式 A：下载 Release
 
 维护者发布预构建版本时，请从

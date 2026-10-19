@@ -81,15 +81,15 @@ config/                   public product/API constants and configuration example
 debug/                    Editor launcher, runtime panel, fixtures and live config
 core/models/              session and transactional move model
 core/services/            game, challenge and leaderboard application services
-core/sudoku/              solver, generator, validator, uniqueness and difficulty
+core/sudoku/              solver, generator, validator and difficulty analysis
 scripts/                  isolated Supabase Data API and leaderboard modules
 ui/components/            accessible Sudoku cell control
 ui/layout/                shared responsive geometry policy
 ui/localization/          language selection and localized text policy
 ui/scenes/main/           responsive application and main scene
-ui/themes/                theme resource and builder
+ui/themes/                runtime theme builder
 ui/views/                 independently built application views
-assets/app_icons/         original SVG application/adaptive icons
+assets/app_icons/         source artwork and platform export icons
 backend/supabase/         SQL, seed, Edge Functions and backend tests
 tests/                    executable Godot runner and full-suite command
 docs/                     bilingual build, deployment and security instructions

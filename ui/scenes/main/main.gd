@@ -105,7 +105,6 @@ var number_buttons: Dictionary = {}
 var _ranked_difficulty := -1
 var _ranked_resume_session: GameSession
 var _pending_offline_ranked := false
-var _leaderboard_difficulty := 0
 var _leaderboard_snapshot: Dictionary = {}
 var _leaderboard_results: VBoxContainer
 var _current_view := "menu"
@@ -1840,10 +1839,6 @@ func _show_leaderboard() -> void:
 	if network_allowed and bool(AppState.settings.get("leaderboard_auto_refresh", false)) and AppConfig.online_configured():
 		call_deferred("_refresh_leaderboard")
 
-func _set_leaderboard_difficulty(value: String) -> void:
-	_leaderboard_difficulty = clampi(int(value), 0, 5)
-	_show_leaderboard()
-
 func _grant_leaderboard_network_and_refresh() -> void:
 	AppState.settings["leaderboard_network_allowed"] = true
 	AppState.save_settings(PackedStringArray(["leaderboard_network_allowed"]))
@@ -2482,19 +2477,6 @@ func _add_section_title(parent: Container, title_text: String) -> void:
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(title)
 
-func _add_stat_row(label_text: String, value_text: String, parent: Container = null) -> void:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 66
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	(parent if parent != null else content).add_child(row)
-	var label := Label.new()
-	label.text = label_text
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(label)
-	var value := Label.new()
-	value.text = value_text
-	row.add_child(value)
-
 func _add_statistic_metric(parent: Container, label_text: String, value_text: String) -> void:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "StatMetric"
@@ -2793,9 +2775,6 @@ func _preview_custom_sound(kind: String = "button") -> void:
 		# The button itself plays the tap sound. Follow it with the softer
 		# selection sound so the preview verifies both button streams.
 		get_tree().create_timer(0.12).timeout.connect(ui_sounds.play_selection)
-
-func _preview_sound() -> void:
-	_preview_custom_sound("button")
 
 func _icon_button(label: String, icon_name: String, tooltip: String = "") -> Button:
 	var button := _button(label, tooltip)
